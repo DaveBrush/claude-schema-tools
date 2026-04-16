@@ -1,0 +1,1170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>XSD Schema Explorer</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0c0e14;--bg2:#12151e;--bg3:#181c28;--bg4:#1f2436;--bg5:#252b40;
+  --border:rgba(255,255,255,0.06);--border2:rgba(255,255,255,0.11);--border3:rgba(255,255,255,0.18);
+  --text:#dde1f0;--text2:#7c829a;--text3:#454b62;
+  --accent:#4f7ef5;--accent2:#3662d8;
+  --green:#3dd68c;--amber:#f5a623;--coral:#f0645a;--teal:#22d3c8;--purple:#9b7ff4;--pink:#e879a8;--cyan:#38bdf8;
+  --shadow:rgba(0,0,0,0.5);
+  --mono:'JetBrains Mono','Fira Code',monospace;--sans:'Outfit',system-ui,sans-serif;
+}
+html.light{
+  --bg:#f0f2f7;--bg2:#ffffff;--bg3:#e8eaf2;--bg4:#dde0ec;--bg5:#cdd1e0;
+  --border:rgba(0,0,0,0.07);--border2:rgba(0,0,0,0.12);--border3:rgba(0,0,0,0.2);
+  --text:#1a1d2e;--text2:#4a5068;--text3:#8890aa;
+  --shadow:rgba(0,0,0,0.15);
+}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px}
+/* theme toggle */
+.theme-btn{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0;flex-shrink:0;font-size:15px;line-height:1}
+/* path breadcrumb in sidebar */
+.sb-path{font-family:var(--mono);font-size:10px;color:var(--text3);background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:6px 9px;margin-bottom:14px;word-break:break-all;line-height:1.7;display:flex;flex-wrap:wrap;align-items:baseline;gap:0}
+.sb-path .pcrumb{color:var(--text2)}.sb-path .pcrumb-sep{color:var(--text3);margin:0 2px}
+.sb-path .pcrumb:last-child{color:var(--teal)}
+.app{display:flex;flex-direction:column;height:100vh}
+
+/* HEADER */
+.hdr{height:54px;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 20px;gap:14px;flex-shrink:0;position:relative;z-index:100}
+.logo{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--teal);letter-spacing:.04em;white-space:nowrap}
+.logo em{color:var(--text3);font-style:normal}
+.divider{width:1px;height:20px;background:var(--border2);flex-shrink:0}
+.srch-wrap{flex:1;max-width:420px;position:relative}
+.srch-wrap svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text3);pointer-events:none;z-index:1}
+.srch-wrap input{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-family:var(--sans);font-size:13px;padding:7px 12px 7px 32px;outline:none;transition:border-color .15s}
+.srch-wrap input:focus{border-color:var(--teal)}
+.srch-wrap input::placeholder{color:var(--text3)}
+.search-dropdown{position:absolute;top:calc(100% + 6px);left:0;right:0;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;overflow:hidden;z-index:200;box-shadow:0 8px 32px rgba(0,0,0,.5);max-height:320px;overflow-y:auto;display:none}
+.search-dropdown.open{display:block}
+.sd-group{padding:6px 0}
+.sd-group-lbl{font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--text3);padding:4px 12px 2px}
+.sd-item{display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer;transition:background .1s}
+.sd-item:hover{background:var(--bg4)}
+.sd-item-name{font-family:var(--mono);font-size:12px;color:var(--text);flex:1}
+.sd-item-name mark{background:none;color:var(--teal);font-weight:600}
+.sd-item-mod{font-size:10px;color:var(--text3);font-family:var(--mono)}
+.sd-item-type{font-size:10px;font-family:var(--mono);padding:1px 5px;border-radius:4px;flex-shrink:0}
+.hdr-r{display:flex;align-items:center;gap:8px;margin-left:auto}
+button{cursor:pointer;border:1px solid var(--border2);border-radius:8px;background:var(--bg3);color:var(--text2);font-family:var(--sans);font-size:12px;padding:6px 12px;transition:background .15s,transform .1s;white-space:nowrap}
+button:hover{background:var(--bg4);color:var(--text)}
+button:active{transform:scale(0.96)}
+.btn-p{background:rgba(34,211,200,.15);border-color:rgba(34,211,200,.3);color:var(--teal);font-weight:500}
+.btn-p:hover{background:rgba(34,211,200,.25);color:var(--teal)}
+input[type=file]{display:none}
+
+/* BODY */
+.body{display:flex;flex:1;overflow:hidden}
+
+/* MODULE LIST (LEFT PANEL) */
+.module-panel{width:280px;min-width:160px;max-width:520px;flex-shrink:0;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;position:relative;user-select:none}
+.mp-resizer{position:absolute;right:-3px;top:0;bottom:0;width:6px;cursor:col-resize;z-index:10;background:transparent;transition:background .15s}
+.mp-resizer:hover,.mp-resizer.dragging{background:var(--teal);opacity:.5}
+.mp-hdr{padding:12px 14px 8px;border-bottom:1px solid var(--border);flex-shrink:0}
+.mp-title{font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--text3);margin-bottom:8px}
+.mp-stats{font-size:10px;font-family:var(--mono);color:var(--text3)}
+.mp-list{flex:1;overflow-y:auto;padding:6px;scrollbar-width:thin;scrollbar-color:var(--bg5) transparent}
+.mp-list::-webkit-scrollbar{width:4px}
+.mp-list::-webkit-scrollbar-thumb{background:var(--bg5);border-radius:2px}
+.mp-empty{padding:20px 14px;text-align:center;color:var(--text3);font-size:12px;line-height:1.6}
+.mod-item{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:7px;cursor:pointer;border:1px solid transparent;transition:background .1s,border-color .1s;margin-bottom:2px}
+.mod-item:hover{background:var(--bg3)}
+.mod-item.active{background:rgba(34,211,200,.08);border-color:rgba(34,211,200,.2)}
+.mod-item.active .mod-name{color:var(--teal)}
+.mod-icon{width:24px;height:24px;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:9px;font-weight:700;font-family:var(--mono)}
+.mod-icon.module{background:rgba(34,211,200,.12);color:var(--teal)}
+.mod-icon.support{background:rgba(79,126,245,.12);color:var(--accent)}
+.mod-name{font-size:12px;font-family:var(--mono);color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.mod-badge{font-size:9px;font-family:var(--mono);padding:1px 4px;border-radius:3px;background:rgba(34,211,200,.1);color:var(--teal);flex-shrink:0}
+
+/* TREE AREA */
+.tree-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+.toolbar{display:flex;align-items:center;gap:6px;padding:8px 14px;border-bottom:1px solid var(--border);background:var(--bg2);flex-shrink:0;flex-wrap:wrap}
+.toolbar button{padding:4px 10px;font-size:11px}
+.tb-title{font-size:12px;font-weight:500;color:var(--text);font-family:var(--mono);margin-right:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px}
+.tb-root{font-size:10px;color:var(--text3);font-family:var(--mono)}
+.stats{font-size:11px;color:var(--text3);font-family:var(--mono);margin-left:auto}
+.tree{flex:1;overflow-y:auto;padding:6px 0 24px;scrollbar-width:thin;scrollbar-color:var(--bg5) transparent}
+.tree::-webkit-scrollbar{width:5px}
+.tree::-webkit-scrollbar-thumb{background:var(--bg5);border-radius:3px}
+
+/* DROP ZONE */
+.drop{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;color:var(--text3);padding:40px;text-align:center}
+.drop-ring{width:72px;height:72px;border:2px dashed var(--border3);border-radius:18px;display:flex;align-items:center;justify-content:center}
+.drop h2{font-size:17px;font-weight:500;color:var(--text2)}
+.drop p{font-size:12px;line-height:1.7;max-width:300px}
+.drop-hint{font-size:11px;color:var(--text3);font-family:var(--mono);background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:6px 12px}
+
+/* TREE NODES */
+.node-row{display:flex;align-items:center;padding:2px 10px 2px 0;margin:0 6px 1px;border-radius:6px;cursor:pointer;min-height:27px;border:1px solid transparent;transition:background .08s}
+.node-row:hover{background:var(--bg3)}
+.node-row.sel{background:rgba(34,211,200,.1);border-color:rgba(34,211,200,.2)}
+.node-row.sel .nname{color:var(--teal)}
+.node-row.hit-cur{background:rgba(245,166,35,.13);border-color:rgba(245,166,35,.3)}
+.node-row.hit-cur .nname{color:var(--amber)}
+.node-row.hit-other{background:rgba(245,166,35,.05);opacity:.6}
+.node-row.hit-other .nname{color:var(--amber)}
+.tog{width:20px;height:20px;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--text3);font-size:8px;transition:transform .15s}
+.tog.open{transform:rotate(90deg)}
+.tog.leaf{opacity:0;pointer-events:none}
+.nicon{width:15px;height:15px;flex-shrink:0;display:flex;align-items:center;justify-content:center;margin-right:7px}
+.nname{font-family:var(--mono);font-size:12.5px;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nbadges{display:flex;align-items:center;gap:3px;margin-left:6px;flex-shrink:0}
+.bdg{font-size:10px;font-weight:600;font-family:var(--mono);padding:1px 5px;border-radius:4px}
+.b-elem{background:rgba(34,211,200,.12);color:var(--teal)}
+.b-attr{background:rgba(155,127,244,.12);color:var(--purple)}
+.b-ctype{background:rgba(79,126,245,.1);color:var(--accent)}
+.b-stype{background:rgba(61,214,140,.12);color:var(--green)}
+.b-seq{background:rgba(245,166,35,.1);color:var(--amber)}
+.b-choice{background:rgba(232,121,168,.11);color:var(--pink)}
+.b-req{background:rgba(240,100,90,.12);color:var(--coral)}
+.b-ref{background:rgba(245,166,35,.1);color:var(--amber);font-size:9px}
+.b-ext{background:rgba(56,189,248,.1);color:var(--cyan);font-size:9px}
+.b-card{background:var(--bg4);border:1px solid var(--border2);color:var(--text3)}
+.b-mod{background:rgba(34,211,200,.08);color:var(--teal);font-size:9px}
+
+/* SIDEBAR */
+.sidebar{width:300px;flex-shrink:0;background:var(--bg2);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;transition:width .2s ease}
+.sidebar.closed{width:0;border-left:none}
+.sb-hdr{display:flex;align-items:center;padding:11px 14px;border-bottom:1px solid var(--border);flex-shrink:0}
+.sb-title{font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--text3)}
+.sb-hdr button{margin-left:auto;background:none;border:none;padding:0;font-size:18px;color:var(--text3);line-height:1}
+.sb-hdr button:hover{color:var(--text);transform:none}
+.sb-body{flex:1;overflow-y:auto;padding:14px;scrollbar-width:thin;scrollbar-color:var(--bg5) transparent}
+.sb-body::-webkit-scrollbar{width:4px}
+.sb-body::-webkit-scrollbar-thumb{background:var(--bg5);border-radius:2px}
+.empty-sb{height:100%;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12px;text-align:center;padding:20px}
+.s-sec{margin-bottom:18px}
+.s-lbl{font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--text3);margin-bottom:9px}
+.s-row{display:flex;gap:8px;font-size:11px;margin-bottom:6px;align-items:flex-start}
+.s-key{color:var(--text3);min-width:80px;flex-shrink:0;padding-top:1px}
+.s-val{color:var(--text);word-break:break-all;font-family:var(--mono);font-size:11px}
+.desc{font-size:12px;line-height:1.65;color:var(--text2);background:var(--bg3);border-left:2px solid var(--teal);padding:8px 10px;border-radius:0 6px 6px 0;margin-bottom:16px}
+.snippet{background:var(--bg);border:1px solid var(--border2);border-radius:8px;padding:11px;font-family:var(--mono);font-size:11px;line-height:1.75;white-space:pre-wrap;word-break:break-word;max-height:300px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--bg5) transparent}
+.xk{color:#6faef7}.xv{color:var(--green)}.xa{color:var(--amber)}.xt{color:var(--coral)}.xc{color:var(--text3);font-style:italic}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="hdr">
+    <div class="logo">xsd<em>/</em>explorer</div>
+    <div class="divider"></div>
+    <div class="srch-wrap">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input id="si" type="text" placeholder="Search elements across all modules…" autocomplete="off">
+      <div class="search-dropdown" id="sdrop"></div>
+    </div>
+    <div class="hdr-r">
+      <button class="theme-btn" id="themebtn" title="Toggle light/dark mode">🌙</button>
+      <button id="tsbtn">⊟ Properties</button>
+      <button class="btn-p" onclick="document.getElementById('fi').click()">↑ Load XSD files</button>
+      <input type="file" id="fi" accept=".xsd" multiple>
+    </div>
+  </div>
+  <div class="body">
+    <!-- MODULE LIST -->
+    <div class="module-panel" id="mpanel">
+      <div class="mp-resizer" id="mpresizer"></div>
+      <div class="mp-hdr">
+        <div class="mp-title">Modules</div>
+        <div class="mp-stats" id="mpstats">No files loaded</div>
+      </div>
+      <div class="mp-list" id="mplist">
+        <div class="mp-empty">Load XSD files to see modules here.<br><br>Tip: load all related XSDs together so imports resolve correctly.</div>
+      </div>
+    </div>
+    <!-- TREE -->
+    <div class="tree-wrap">
+      <div class="drop" id="dz">
+        <div class="drop-ring">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        </div>
+        <h2>No module selected</h2>
+        <p>Load one or more XSD files and select a module from the left panel to explore its element tree.</p>
+        <div class="drop-hint">Supports xsd:import · $ref resolution · multi-file</div>
+        <button class="btn-p" style="margin-top:4px" onclick="document.getElementById('fi').click()">Choose XSD files</button>
+      </div>
+      <div id="tw" style="display:none;flex-direction:column;flex:1;overflow:hidden">
+        <div class="toolbar">
+          <span class="tb-title" id="tbtitle"></span>
+          <span class="tb-root" id="tbroot"></span>
+          <button onclick="expandAll()">Expand all</button>
+          <button onclick="collapseAll()">Collapse all</button>
+          <span class="stats" id="st"></span>
+        </div>
+        <div class="tree" id="tr"></div>
+      </div>
+    </div>
+    <!-- SIDEBAR -->
+    <div class="sidebar" id="sb">
+      <div class="sb-hdr">
+        <span class="sb-title">Node properties</span>
+        <button onclick="closeSb()">×</button>
+      </div>
+      <div class="sb-body" id="sbb">
+        <div class="empty-sb">Click any node to inspect its XSD definition</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+const allFiles = {};       // filename → parsed XSD DOM
+const allTypes = {};       // typeName → {el, filename}
+const allElements = {};    // elementName → {el, filename, typeName}
+const modules = [];        // [{name, filename, rootTypeName, rootEl}]
+let activeModule = null;
+let expanded = new Set();
+let selected = null;
+let sbOpen = true;
+const MAX_DEPTH = 30;
+
+const fi = document.getElementById('fi');
+const si = document.getElementById('si');
+const sdrop = document.getElementById('sdrop');
+const dz = document.getElementById('dz');
+const tw = document.getElementById('tw');
+const tr = document.getElementById('tr');
+const sb = document.getElementById('sb');
+const sbb = document.getElementById('sbb');
+const mplist = document.getElementById('mplist');
+const mpstats = document.getElementById('mpstats');
+
+// ── File Loading ────────────────────────────────────────────────────────────
+fi.onchange = e => {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+  const readers = files.map(f => new Promise(res => {
+    const r = new FileReader();
+    r.onload = ev => res({name: f.name, text: ev.target.result});
+    r.readAsText(f);
+  }));
+  Promise.all(readers).then(results => {
+    results.forEach(({name, text}) => {
+      try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(text, 'application/xml');
+        if (doc.querySelector('parsererror')) throw new Error('XML parse error');
+        allFiles[name] = doc;
+      } catch(e) { alert('Failed to parse ' + name + ': ' + e.message); }
+    });
+    rebuildIndex();
+    renderModuleList();
+    fi.value = '';
+  });
+};
+
+document.body.addEventListener('dragover', e => e.preventDefault());
+document.body.addEventListener('drop', e => {
+  e.preventDefault();
+  const xsds = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.xsd'));
+  if (!xsds.length) return;
+  fi.files = e.dataTransfer.files; // won't work but trigger manually
+  const readers = xsds.map(f => new Promise(res => {
+    const r = new FileReader(); r.onload = ev => res({name:f.name, text:ev.target.result}); r.readAsText(f);
+  }));
+  Promise.all(readers).then(results => {
+    results.forEach(({name, text}) => {
+      try { allFiles[name] = new DOMParser().parseFromString(text, 'application/xml'); } catch(e) {}
+    });
+    rebuildIndex(); renderModuleList();
+  });
+});
+
+// ── Index Building ──────────────────────────────────────────────────────────
+function rebuildIndex() {
+  // Clear
+  Object.keys(allTypes).forEach(k => delete allTypes[k]);
+  Object.keys(allElements).forEach(k => delete allElements[k]);
+  modules.length = 0;
+
+  // Index all types and elements from all files
+  for (const [filename, doc] of Object.entries(allFiles)) {
+    const ns = getSchemaPrefix(doc);
+    // ComplexTypes
+    doc.querySelectorAll(':scope > schema > complexType, schema > complexType').forEach(ct => {
+      const name = ct.getAttribute('name');
+      if (name) allTypes[name] = {el: ct, filename, kind: 'complexType'};
+    });
+    // SimpleTypes
+    doc.querySelectorAll('schema > simpleType').forEach(st => {
+      const name = st.getAttribute('name');
+      if (name) allTypes[name] = {el: st, filename, kind: 'simpleType'};
+    });
+    // Top-level elements
+    doc.querySelectorAll('schema > element').forEach(el => {
+      const name = el.getAttribute('name');
+      if (name) allElements[name] = {el, filename};
+    });
+  }
+
+  // Identify modules: files with a name matching *Module.xsd that contain a *ModuleType complexType
+  for (const [filename, doc] of Object.entries(allFiles)) {
+    const isModuleFile = /Module\.xsd$/i.test(filename);
+    if (isModuleFile) {
+      const base = filename.replace(/\.xsd$/i, '');
+      const rootTypeName = base + 'Type';
+      const rootType = allTypes[rootTypeName];
+
+      // Find the top-level element whose type= matches rootTypeName (gives us the element name)
+      const findRootElementName = (typeName) => {
+        for (const [elName, elInfo] of Object.entries(allElements)) {
+          const t = elInfo.el.getAttribute('type');
+          const tLocal = t && t.includes(':') ? t.split(':').pop() : t;
+          if (tLocal === typeName) return elName;
+        }
+        // Fallback: decapitalise the type name (BatteryInformationModuleType → batteryInformationModule)
+        return typeName ? typeName.charAt(0).toLowerCase() + typeName.slice(1).replace(/Type$/, '') : null;
+      };
+
+      if (rootType) {
+        const rootElementName = findRootElementName(rootTypeName);
+        modules.push({name: base, filename, rootTypeName, rootElementName, rootEl: rootType.el, isModule: true});
+      } else {
+        let found = null;
+        for (const [tname, tval] of Object.entries(allTypes)) {
+          if (tval.filename === filename && tname.endsWith('ModuleType')) {
+            const rootElementName = findRootElementName(tname);
+            found = {name: base, filename, rootTypeName: tname, rootElementName, rootEl: tval.el, isModule: true};
+            break;
+          }
+        }
+        if (found) modules.push(found);
+        else modules.push({name: base, filename, rootTypeName: null, rootElementName: null, rootEl: null, isModule: true});
+      }
+    }
+  }
+
+  // Sort modules
+  modules.sort((a,b) => a.name.localeCompare(b.name));
+}
+
+function getSchemaPrefix(doc) {
+  const schema = doc.documentElement;
+  if (!schema) return 'xs';
+  for (const attr of schema.attributes) {
+    if (attr.value === 'http://www.w3.org/2001/XMLSchema' && attr.name.startsWith('xmlns:')) {
+      return attr.name.split(':')[1];
+    }
+  }
+  return 'xs';
+}
+
+// ── Module List Rendering ───────────────────────────────────────────────────
+function renderModuleList() {
+  const fileCount = Object.keys(allFiles).length;
+  mpstats.textContent = `${fileCount} file${fileCount!==1?'s':''} · ${modules.length} module${modules.length!==1?'s':''}`;
+
+  if (!fileCount) {
+    mplist.innerHTML = '<div class="mp-empty">No files loaded yet.</div>';
+    return;
+  }
+
+  let html = '';
+  if (modules.length) {
+    html += modules.map(m => `
+      <div class="mod-item${activeModule&&activeModule.name===m.name?' active':''}" data-mod="${esc(m.name)}" onclick="selectModule('${esc(m.name)}')">
+        <div class="mod-icon module">M</div>
+        <span class="mod-name" title="${esc(m.filename)}">${esc(m.name.replace('Module',''))}</span>
+        ${m.rootTypeName ? '<span class="mod-badge">root</span>' : ''}
+      </div>
+    `).join('');
+  }
+
+  // Support files — clickable
+  const nonModuleFiles = Object.keys(allFiles).filter(f => !modules.find(m => m.filename === f));
+  if (nonModuleFiles.length) {
+    html += `<div style="height:1px;background:var(--border);margin:6px 4px"></div>`;
+    html += nonModuleFiles.map(f => {
+      const fname = f.replace('.xsd','');
+      const isActive = activeModule && activeModule.filename === f && activeModule._isSupport;
+      return `
+        <div class="mod-item${isActive?' active':''}" title="${esc(f)}" onclick="selectSupportFile('${esc(f)}')">
+          <div class="mod-icon support">S</div>
+          <span class="mod-name">${esc(fname)}</span>
+        </div>`;
+    }).join('');
+  }
+
+  mplist.innerHTML = html || '<div class="mp-empty">No modules detected.<br>Files need to match *Module.xsd pattern.</div>';
+}
+
+function selectModule(name) {
+  const mod = modules.find(m => m.name === name);
+  if (!mod || !mod.rootEl) return;
+  activeModule = mod;
+  expanded = new Set(['__root__']);
+  selected = null;
+  renderModuleList();
+  renderTree(mod);
+}
+
+function selectSupportFile(filename) {
+  // Gather all top-level elements and complex types from this file
+  const doc = allFiles[filename];
+  if (!doc) return;
+
+  const roots = [];
+  // Top-level elements first
+  doc.querySelectorAll('schema > element').forEach(el => {
+    const name = el.getAttribute('name');
+    const typeName = el.getAttribute('type');
+    const typeLocal = typeName ? (typeName.includes(':') ? typeName.split(':').pop() : typeName) : null;
+    const typeEl = typeLocal && allTypes[typeLocal] ? allTypes[typeLocal].el : null;
+    if (name) roots.push({label: name, el: typeEl || el, typeName: typeLocal, kind: 'element'});
+  });
+  // Top-level complex types
+  doc.querySelectorAll('schema > complexType').forEach(ct => {
+    const name = ct.getAttribute('name');
+    if (name && !roots.find(r => r.typeName === name)) {
+      roots.push({label: name, el: ct, typeName: name, kind: 'complexType'});
+    }
+  });
+
+  if (roots.length === 0) return;
+
+  // If only one root, go straight to it
+  if (roots.length === 1) {
+    _loadSupportRoot(filename, roots[0]);
+    return;
+  }
+
+  // Show picker — temporarily replace tree area with a root selector
+  const fname = filename.replace('.xsd','');
+  activeModule = {name: fname, filename, _isSupport: true, rootTypeName: null, rootEl: null};
+  renderModuleList();
+
+  dz.style.display = 'none';
+  tw.style.display = 'flex';
+  document.getElementById('tbtitle').textContent = fname;
+  document.getElementById('tbroot').textContent = 'select entry point';
+  document.getElementById('st').textContent = `${roots.length} entry points`;
+
+  tr.innerHTML = roots.map(r => `
+    <div class="node">
+      <div class="node-row" style="padding-left:6px;cursor:pointer" data-root-pick="${esc(JSON.stringify({filename, label: r.label, typeName: r.typeName, kind: r.kind}))}">
+        <div class="tog leaf">▶</div>
+        <div class="nicon">${getIcon(r.kind)}</div>
+        <div class="nname">${esc(r.label)}</div>
+        <div class="nbadges"><span class="bdg ${r.kind==='element'?'b-elem':'b-ctype'}">${esc(r.kind==='element'?'elem':'cType')}</span></div>
+      </div>
+    </div>`).join('');
+
+  tr.querySelectorAll('[data-root-pick]').forEach(el => {
+    el.addEventListener('click', function() {
+      const pick = JSON.parse(this.dataset.rootPick);
+      const typeLocal = pick.typeName;
+      const typeEl = typeLocal && allTypes[typeLocal] ? allTypes[typeLocal].el : null;
+      const xsdEl = allElements[pick.label] ? allElements[pick.label].el : typeEl;
+      _loadSupportRoot(pick.filename, {label: pick.label, el: typeEl || xsdEl, typeName: typeLocal, kind: pick.kind});
+    });
+  });
+}
+
+function _loadSupportRoot(filename, root) {
+  const fname = filename.replace('.xsd','');
+  activeModule = {
+    name: fname,
+    filename,
+    rootTypeName: root.typeName,
+    rootElementName: root.label,
+    rootEl: root.el,
+    _isSupport: true
+  };
+  expanded = new Set(['__root__']);
+  selected = null;
+  renderModuleList();
+  renderTree(activeModule);
+}
+
+// ── Tree Rendering ──────────────────────────────────────────────────────────
+function renderTree(mod) {
+  dz.style.display = 'none';
+  tw.style.display = 'flex';
+  document.getElementById('tbtitle').textContent = mod.name;
+  document.getElementById('tbroot').textContent = `root: ${mod.rootTypeName}`;
+
+  let nodeCount = 0;
+
+  // Build a node. xsdEl is the element to display (e.g. xs:element).
+  // typeEl is the resolved complexType element (may differ from xsdEl for typed elements).
+  function buildNode(nodeId, label, xsdEl, typeEl, depth, visited) {
+    if (depth > MAX_DEPTH) return '';
+    if (!xsdEl && !typeEl) return '';
+    nodeCount++;
+
+    const displayEl = xsdEl || typeEl;
+    const isExp = expanded.has(nodeId);
+    const isSel = selected === nodeId;
+
+    // Get children using the type element (for proper deep traversal)
+    const children = getChildren(typeEl || xsdEl, visited);
+    const isLeaf = children.length === 0;
+    const togCls = isLeaf ? 'tog leaf' : (isExp ? 'tog open' : 'tog');
+    const kind = getNodeKind(displayEl);
+    const badges = getBadges(displayEl, kind);
+
+    let childHtml = '';
+    if (isExp && !isLeaf) {
+      childHtml = '<div>';
+      for (const c of children) {
+        const childId = nodeId + '/' + c.label;
+        const newVisited = new Set(visited);
+        if (c.resolvedType) newVisited.add(c.resolvedType);
+        // Resolve the child's type element for proper deep traversal
+        const childTypeEl = c.resolvedType && allTypes[c.resolvedType] ? allTypes[c.resolvedType].el : null;
+        childHtml += buildNode(childId, c.label, c.el, childTypeEl, depth + 1, newVisited);
+      }
+      childHtml += '</div>';
+    }
+
+    const indent = depth * 16 + 6;
+    const rowCls = `node-row${isSel?' sel':''}`;
+    const iconSvg = getIcon(kind);
+
+    return `<div class="node">
+      <div class="${rowCls}" style="padding-left:${indent}px" data-path="${esc(nodeId)}">
+        <div class="${togCls}">▶</div>
+        <div class="nicon">${iconSvg}</div>
+        <div class="nname">${esc(label)}</div>
+        <div class="nbadges">${badges}</div>
+      </div>${childHtml}</div>`;
+  }
+
+  const rootLabel = mod.rootElementName || mod.rootTypeName;
+  const html = buildNode('__root__', rootLabel, mod.rootEl, mod.rootEl, 0, new Set([mod.rootTypeName]));
+  tr.innerHTML = html;
+  document.getElementById('st').textContent = `${nodeCount} nodes`;
+  tr.querySelectorAll('[data-path]').forEach(el => el.addEventListener('click', function(e) {
+    e.stopPropagation();
+    onNodeClick(this.dataset.path);
+  }));
+}
+
+// ── XSD Tree Logic ──────────────────────────────────────────────────────────
+function resolveType(typeName) {
+  if (!typeName) return null;
+  // Strip namespace prefix
+  const local = typeName.includes(':') ? typeName.split(':').pop() : typeName;
+  return allTypes[local] || null;
+}
+
+function resolveRef(refName) {
+  if (!refName) return null;
+  const local = refName.includes(':') ? refName.split(':').pop() : refName;
+  // Check elements first
+  if (allElements[local]) return {el: allElements[local].el, label: local, resolvedType: null};
+  return null;
+}
+
+function getChildren(xsdEl, visited) {
+  if (!xsdEl) return [];
+  visited = visited || new Set();
+  const children = [];
+  const tag = localName(xsdEl);
+
+  // ComplexType: look inside sequence/choice/all/complexContent
+  if (tag === 'complexType' || tag === 'group') {
+    const inner = xsdEl.querySelector('sequence, choice, all');
+    if (inner) return getChildren(inner, visited);
+    const cc = xsdEl.querySelector('complexContent, simpleContent');
+    if (cc) return getChildren(cc, visited);
+  }
+
+  if (tag === 'complexContent' || tag === 'simpleContent') {
+    const ext = xsdEl.querySelector('extension, restriction');
+    if (ext) {
+      // First add extension base children
+      const base = ext.getAttribute('base');
+      if (base) {
+        const local = base.includes(':') ? base.split(':').pop() : base;
+        if (!visited.has(local) && allTypes[local]) {
+          const newVis = new Set(visited); newVis.add(local);
+          const inherited = getChildren(allTypes[local].el, newVis);
+          inherited.forEach(c => { c._inherited = true; children.push(c); });
+        }
+      }
+      return [...children, ...getChildren(ext, visited)];
+    }
+  }
+
+  if (tag === 'extension' || tag === 'restriction') {
+    // Direct children of extension
+    const seq = xsdEl.querySelector(':scope > sequence, :scope > choice, :scope > all');
+    if (seq) return [...children, ...getChildren(seq, visited)];
+    // Also pick up any direct element/attribute/group children
+    for (const child of xsdEl.children) {
+      const cn = localName(child);
+      if (cn === 'sequence' || cn === 'choice' || cn === 'all') return [...children, ...getChildren(child, visited)];
+      if (cn === 'element' || cn === 'attribute' || cn === 'group' || cn === 'attributeGroup') {
+        children.push(...resolveChild(child, visited));
+      }
+    }
+    return children;
+  }
+
+  // Sequence / Choice / All: iterate direct children
+  if (tag === 'sequence' || tag === 'choice' || tag === 'all') {
+    for (const child of xsdEl.children) {
+      const cn = localName(child);
+      if (cn === 'element') children.push(...resolveChild(child, visited));
+      else if (cn === 'attribute') children.push(...resolveChild(child, visited));
+      else if (cn === 'sequence' || cn === 'choice' || cn === 'all') {
+        // Inline compositor - flatten with label
+        const label = cn + (child.getAttribute('minOccurs') !== undefined ? '' : '');
+        children.push({el: child, label: `[${cn}]`, resolvedType: null});
+      }
+      else if (cn === 'group') {
+        const ref = child.getAttribute('ref');
+        if (ref) {
+          const local = ref.includes(':') ? ref.split(':').pop() : ref;
+          if (allTypes[local] && !visited.has(local)) {
+            const newVis = new Set(visited); newVis.add(local);
+            const inner = allTypes[local].el;
+            const innerSeq = inner.querySelector('sequence, choice, all');
+            if (innerSeq) children.push(...getChildren(innerSeq, newVis));
+          }
+        } else {
+          children.push({el: child, label: child.getAttribute('name') || '[group]', resolvedType: null});
+        }
+      }
+      else if (cn === 'any') {
+        children.push({el: child, label: '[any]', resolvedType: null});
+      }
+    }
+    // Also pick up attributes from parent complexType if sequence is direct child
+    const parent = xsdEl.parentElement;
+    if (parent && (localName(parent) === 'complexType' || localName(parent) === 'extension')) {
+      for (const child of parent.children) {
+        if (localName(child) === 'attribute' || localName(child) === 'attributeGroup') {
+          children.push(...resolveChild(child, visited));
+        }
+      }
+    }
+    return children;
+  }
+
+  // Element: resolve type and show its children transparently
+  if (tag === 'element') {
+    const typeName = xsdEl.getAttribute('type');
+    if (typeName) {
+      const local = typeName.includes(':') ? typeName.split(':').pop() : typeName;
+      if (!visited.has(local) && allTypes[local]) {
+        return getChildren(allTypes[local].el, new Set([...visited, local]));
+      }
+    }
+    // Inline complexType
+    const inline = xsdEl.querySelector('complexType, simpleType');
+    if (inline) return getChildren(inline, visited);
+  }
+
+  return children;
+}
+
+function resolveChild(el, visited) {
+  const cn = localName(el);
+  visited = visited || new Set();
+
+  if (cn === 'element') {
+    const ref = el.getAttribute('ref');
+    const name = el.getAttribute('name');
+    const typeName = el.getAttribute('type');
+
+    if (ref) {
+      // Element ref: resolve to global element, then its type
+      const local = ref.includes(':') ? ref.split(':').pop() : ref;
+      if (allElements[local]) {
+        const refEl = allElements[local].el;
+        const refType = refEl.getAttribute('type');
+        const resolvedType = refType ? (refType.includes(':') ? refType.split(':').pop() : refType) : null;
+        return [{el: refEl, label: local, resolvedType, _isRef: true}];
+      }
+      return [{el: el, label: local || ref, resolvedType: null, _isRef: true}];
+    }
+
+    if (name) {
+      if (typeName) {
+        const local = typeName.includes(':') ? typeName.split(':').pop() : typeName;
+        return [{el, label: name, resolvedType: allTypes[local] ? local : null}];
+      }
+      return [{el, label: name, resolvedType: null}];
+    }
+  }
+
+  if (cn === 'attribute') {
+    const name = el.getAttribute('name') || el.getAttribute('ref') || '@?';
+    return [{el, label: '@' + name.replace(/^@/,''), resolvedType: null}];
+  }
+
+  if (cn === 'attributeGroup') {
+    const ref = el.getAttribute('ref');
+    if (ref) {
+      const local = ref.includes(':') ? ref.split(':').pop() : ref;
+      if (allTypes[local]) {
+        const ag = allTypes[local].el;
+        // Inline attribute group children
+        return [{el: ag, label: '[attrGroup] ' + local, resolvedType: null}];
+      }
+    }
+    return [];
+  }
+
+  return [{el, label: el.getAttribute('name') || cn, resolvedType: null}];
+}
+
+function localName(el) {
+  if (!el || el.nodeType !== 1) return '';
+  return el.localName || el.nodeName.split(':').pop();
+}
+
+function getNodeKind(el) {
+  if (!el) return 'unknown';
+  const tag = localName(el);
+  if (tag === 'complexType') return 'complexType';
+  if (tag === 'simpleType') return 'simpleType';
+  if (tag === 'element') return 'element';
+  if (tag === 'attribute') return 'attribute';
+  if (tag === 'sequence') return 'sequence';
+  if (tag === 'choice') return 'choice';
+  if (tag === 'all') return 'all';
+  if (tag === 'group') return 'group';
+  if (tag === 'attributeGroup') return 'attributeGroup';
+  if (tag === 'any') return 'any';
+  if (tag === 'extension') return 'extension';
+  if (tag === 'restriction') return 'restriction';
+  return 'other';
+}
+
+function getBadges(el, kind) {
+  if (!el) return '';
+  let b = '';
+  const tag = localName(el);
+
+  // Kind badge — element and attribute are self-evident from context, omit them
+  const kindMap = {
+    complexType: ['b-ctype','cType'], simpleType: ['b-stype','sType'],
+    sequence: ['b-seq','seq'], choice: ['b-choice','choice'],
+    all: ['b-seq','all'], group: ['b-ctype','group'],
+    attributeGroup: ['b-attr','attrGrp'], any: ['b-ref','any'],
+  };
+  if (kindMap[tag]) b += `<span class="bdg ${kindMap[tag][0]}">${kindMap[tag][1]}</span>`;
+
+  // Type ref badge
+  const type = el.getAttribute('type');
+  if (type) {
+    const local = type.includes(':') ? type.split(':').pop() : type;
+    const isBuiltin = type.startsWith('xs:') || type.startsWith('xsd:');
+    if (!isBuiltin && allTypes[local]) b += `<span class="bdg b-ref">→${local}</span>`;
+    else if (isBuiltin) b += `<span class="bdg b-stype">${local}</span>`;
+  }
+
+  // Base extension
+  const base = el.getAttribute('base');
+  if (base) {
+    const local = base.includes(':') ? base.split(':').pop() : base;
+    b += `<span class="bdg b-ext">ext:${local}</span>`;
+  }
+
+  // Cardinality
+  const min = el.getAttribute('minOccurs');
+  const max = el.getAttribute('maxOccurs');
+  if (min !== null || max !== null) {
+    const mn = min ?? '1', mx = max ?? '1';
+    if (!(mn === '1' && mx === '1')) {
+      b += `<span class="bdg b-card">${mn}..${mx === 'unbounded' ? '∞' : mx}</span>`;
+    }
+    if (min === '0') b += `<span class="bdg" style="background:rgba(245,166,35,.08);color:var(--amber);font-size:10px">opt</span>`;
+  }
+
+  // Use (for attributes)
+  const use = el.getAttribute('use');
+  if (use === 'required') b += `<span class="bdg b-req">req</span>`;
+
+  // Ref badge
+  if (el.getAttribute('ref')) b += `<span class="bdg b-ref">ref</span>`;
+
+  return b;
+}
+
+function getIcon(kind) {
+  const icons = {
+    complexType: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>`,
+    simpleType: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>`,
+    element: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>`,
+    attribute: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>`,
+    sequence: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>`,
+    choice: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--pink)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>`,
+    group: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--pink)" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`,
+  };
+  return icons[kind] || `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg>`;
+}
+
+// ── Node Click ──────────────────────────────────────────────────────────────
+// We need a lookup map from path → {el, label}
+// Rebuild it on each render
+const pathMap = {};
+
+function onNodeClick(path) {
+  if (expanded.has(path)) expanded.delete(path);
+  else expanded.add(path);
+  selected = path;
+  renderTree(activeModule);
+  showSidebar(path);
+}
+
+// Resolve path to XSD element for sidebar
+function resolvePathEl(path) {
+  if (!activeModule) return null;
+  if (path === '__root__') return {el: activeModule.rootEl, label: activeModule.rootElementName || activeModule.rootTypeName};
+
+  const parts = path.split('/').slice(1); // skip __root__
+  // We track typeEl separately from displayEl
+  let typeEl = activeModule.rootEl;
+  let visited = new Set([activeModule.rootTypeName]);
+  let displayEl = activeModule.rootEl;
+
+  for (const part of parts) {
+    const children = getChildren(typeEl, visited);
+    const match = children.find(c => c.label === part);
+    if (!match) return null;
+    displayEl = match.el;
+    if (match.resolvedType && allTypes[match.resolvedType] && !visited.has(match.resolvedType)) {
+      visited = new Set([...visited, match.resolvedType]);
+      typeEl = allTypes[match.resolvedType].el;
+    } else {
+      // No resolved type — use the element itself for child traversal
+      typeEl = match.el;
+    }
+  }
+  return {el: displayEl, typeEl, label: parts[parts.length-1]};
+}
+
+function showSidebar(path) {
+  const resolved = resolvePathEl(path);
+  if (!resolved) { sbb.innerHTML = '<div class="empty-sb">Could not resolve node</div>'; return; }
+  const {el, typeEl, label} = resolved;
+  const tag = localName(el);
+  let h = '';
+
+  // ── XPath breadcrumb ──
+  const rootLabel = activeModule.rootElementName || activeModule.rootTypeName;
+  const xpathParts = path === '__root__'
+    ? [rootLabel]
+    : [rootLabel, ...path.split('/').slice(1)];
+  // Attributes get @ prefix in XPath; strip it from display since we store them as @name
+  const xpath = '/' + xpathParts.map(p => p.startsWith('@') ? p : p).join('/');
+  h += `<div class="sb-path" title="${esc(xpath)}" data-copy="${esc(xpath)}">`;
+  h += xpathParts.map((c, i) => {
+    const sep = i === 0 ? '' : '<span class="pcrumb-sep">/</span>';
+    return `${sep}<span class="pcrumb${i===xpathParts.length-1?' last':''}">${esc(c)}</span>`;
+  }).join('');
+  h += `<span class="copy-path-btn" title="Copy XPath" style="margin-left:auto;cursor:pointer;color:var(--text3);font-size:10px;flex-shrink:0;padding-left:8px">⎘</span>`;
+  h += `</div>`;
+
+  const dispName = el.getAttribute('name') || el.getAttribute('ref') || label;
+  const docEl = el.querySelector('annotation > documentation') ||
+                (typeEl && typeEl !== el ? typeEl.querySelector('annotation > documentation') : null);
+  if (docEl && docEl.textContent.trim()) {
+    h += `<div class="desc">${esc(docEl.textContent.trim())}</div>`;
+  }
+
+  h += `<div class="s-sec"><div class="s-lbl">Element info</div>`;
+  h += row('name', `<span style="color:var(--teal)">${esc(dispName)}</span>`);
+  h += row('kind', `<span style="color:var(--text2)">${esc(tag)}</span>`);
+
+  const type = el.getAttribute('type');
+  if (type) h += row('type', `<span style="color:var(--amber)">${esc(type)}</span>`);
+
+  const base = el.getAttribute('base') || (typeEl ? typeEl.querySelector('complexContent > extension, simpleContent > extension')?.getAttribute('base') : null);
+  if (base) h += row('extends', `<span style="color:var(--cyan)">${esc(base)}</span>`);
+
+  const ref = el.getAttribute('ref');
+  if (ref) h += row('ref', `<span style="color:var(--amber)">${esc(ref)}</span>`);
+
+  const min = el.getAttribute('minOccurs');
+  const max = el.getAttribute('maxOccurs');
+  if (min !== null) h += row('minOccurs', `<span style="color:var(--green)">${esc(min)}</span>`);
+  if (max !== null) h += row('maxOccurs', `<span style="color:${max==='unbounded'?'var(--coral)':'var(--green)'}">${esc(max)}</span>`);
+
+  const use = el.getAttribute('use');
+  if (use) h += row('use', `<span style="color:${use==='required'?'var(--coral)':'var(--text2)'}">${esc(use)}</span>`);
+
+  const fixed = el.getAttribute('fixed');
+  if (fixed !== null) h += row('fixed', `<span style="color:var(--purple)">${esc(fixed)}</span>`);
+
+  const defVal = el.getAttribute('default');
+  if (defVal !== null) h += row('default', `<span>${esc(defVal)}</span>`);
+
+  // Source file
+  if (type) {
+    const local = type.includes(':') ? type.split(':').pop() : type;
+    const src = allTypes[local];
+    if (src) h += row('source', `<span style="color:var(--text3);font-size:10px">${esc(src.filename)}</span>`);
+  }
+  h += '</div>';
+
+  // Enum values — check resolved type too
+  const searchEl = typeEl || el;
+  const enums = Array.from(searchEl.querySelectorAll('enumeration'));
+  if (enums.length) {
+    h += `<div class="s-sec"><div class="s-lbl">Enumeration values</div><div style="display:flex;flex-wrap:wrap;gap:4px">`;
+    enums.forEach(en => {
+      h += `<span style="font-size:10px;font-family:var(--mono);background:var(--bg4);border:1px solid var(--border2);border-radius:4px;padding:2px 7px;color:var(--text2)">${esc(en.getAttribute('value'))}</span>`;
+    });
+    h += '</div></div>';
+  }
+
+  // Pattern restrictions
+  const patterns = Array.from(searchEl.querySelectorAll('pattern'));
+  patterns.forEach(p => {
+    h += `<div class="s-sec"><div class="s-lbl">Pattern</div><div class="snippet">${esc(p.getAttribute('value'))}</div></div>`;
+  });
+
+  // XSD Snippet — show display element + resolved type if different
+  const snippetXml = formatXmlSnippet(el);
+  h += `<div class="s-sec"><div class="s-lbl">XSD snippet</div><div class="snippet">${highlightXml(snippetXml)}</div></div>`;
+  if (typeEl && typeEl !== el) {
+    const typeSnippet = formatXmlSnippet(typeEl);
+    h += `<div class="s-sec"><div class="s-lbl">Resolved type</div><div class="snippet">${highlightXml(typeSnippet)}</div></div>`;
+  }
+
+  sbb.innerHTML = h;
+  if (!sbOpen) { sbOpen = true; sb.classList.remove('closed'); }
+}
+
+function row(k, v) { return `<div class="s-row"><span class="s-key">${esc(k)}</span><span class="s-val">${v}</span></div>`; }
+
+// Copy path button — event delegation
+sbb.addEventListener('click', e => {
+  const btn = e.target.closest('.copy-path-btn');
+  if (!btn) return;
+  const text = btn.closest('.sb-path')?.dataset.copy || '';
+  if (text) navigator.clipboard.writeText(text).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = '✓';
+    setTimeout(() => btn.textContent = orig, 1200);
+  });
+});
+sbb.addEventListener('mouseover', e => { if(e.target.classList.contains('copy-path-btn')) e.target.style.color='var(--teal)'; });
+sbb.addEventListener('mouseout',  e => { if(e.target.classList.contains('copy-path-btn')) e.target.style.color='var(--text3)'; });
+
+function formatXmlSnippet(el, depth, maxDepth) {
+  depth = depth || 0;
+  maxDepth = maxDepth || 4;
+  if (!el || el.nodeType !== 1) return '';
+  const indent = '  '.repeat(depth);
+  const tagName = el.nodeName;
+  let attrs = '';
+  for (const attr of el.attributes) {
+    attrs += ` ${attr.name}="${attr.value}"`;
+  }
+  const children = Array.from(el.children);
+  const docText = el.querySelector('annotation > documentation');
+  if (!children.length) return `${indent}<${tagName}${attrs}/>`;
+  if (depth >= maxDepth) return `${indent}<${tagName}${attrs}>…</${tagName}>`;
+  let inner = '';
+  for (const child of children) {
+    if (localName(child) === 'annotation') {
+      const doc = child.querySelector('documentation');
+      if (doc) inner += `\n${indent}  <!-- ${doc.textContent.trim().replace(/\n/g,' ').substring(0,80)} -->`;
+    } else {
+      inner += '\n' + formatXmlSnippet(child, depth + 1, maxDepth);
+    }
+  }
+  return `${indent}<${tagName}${attrs}>${inner}\n${indent}</${tagName}>`;
+}
+
+function highlightXml(s) {
+  return esc(s)
+    .replace(/&lt;!--([^-]*)--&gt;/g, '<span class="xc">&lt;!--$1--&gt;</span>')
+    .replace(/&lt;\/?([\w:]+)/g, '&lt;<span class="xk">$1</span>')
+    .replace(/\s([\w:]+)=&quot;([^&]*)&quot;/g, ' <span class="xa">$1</span>=<span class="xv">"$2"</span>');
+}
+
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ── Search ──────────────────────────────────────────────────────────────────
+si.addEventListener('input', () => {
+  const q = si.value.trim().toLowerCase();
+  if (!q || q.length < 2) { sdrop.classList.remove('open'); return; }
+  runSearch(q);
+});
+si.addEventListener('blur', () => setTimeout(() => sdrop.classList.remove('open'), 200));
+si.addEventListener('focus', () => { if (si.value.trim().length >= 2) runSearch(si.value.trim().toLowerCase()); });
+
+function runSearch(q) {
+  const results = [];
+  // Search through all modules' element trees
+  for (const mod of modules) {
+    if (!mod.rootEl) continue;
+    searchInType(mod.rootEl, mod.rootTypeName, mod, [], new Set([mod.rootTypeName]), q, results, 0);
+    if (results.length >= 50) break;
+  }
+  // Also search global elements and types not in modules
+  for (const [name, info] of Object.entries(allTypes)) {
+    if (!results.find(r => r.label.toLowerCase().includes(q)) && name.toLowerCase().includes(q)) {
+      results.push({label: name, kind: info.kind, module: info.filename, path: null, el: info.el});
+    }
+    if (results.length >= 60) break;
+  }
+
+  if (!results.length) {
+    sdrop.innerHTML = '<div style="padding:12px;font-size:12px;color:var(--text3);text-align:center">No results found</div>';
+    sdrop.classList.add('open');
+    return;
+  }
+
+  // Group by module
+  const byMod = {};
+  results.forEach(r => {
+    const key = r.module || 'Global';
+    if (!byMod[key]) byMod[key] = [];
+    byMod[key].push(r);
+  });
+
+  let html = '';
+  for (const [mod, items] of Object.entries(byMod)) {
+    html += `<div class="sd-group"><div class="sd-group-lbl">${esc(mod.replace('.xsd',''))}</div>`;
+    items.slice(0,10).forEach(item => {
+      const highlighted = esc(item.label).replace(new RegExp(esc(q),'gi'), m => `<mark>${m}</mark>`);
+      html += `<div class="sd-item" data-mod="${esc(item.modName||'')}" data-path="${esc(item.path||'')}">
+        <span class="sd-item-name">${highlighted}</span>
+        <span class="sd-item-type bdg ${getKindBadgeClass(item.kind)}">${esc(item.kind||'')}</span>
+      </div>`;
+    });
+    html += '</div>';
+  }
+  sdrop.innerHTML = html;
+  sdrop.classList.add('open');
+
+  sdrop.querySelectorAll('.sd-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const modName = el.dataset.mod;
+      const path = el.dataset.path;
+      sdrop.classList.remove('open');
+      si.value = '';
+      if (modName && path) {
+        selectModule(modName);
+        setTimeout(() => {
+          // Expand path
+          const parts = path.split('/');
+          for (let i = 1; i <= parts.length; i++) expanded.add(parts.slice(0,i).join('/'));
+          selected = path;
+          renderTree(activeModule);
+          showSidebar(path);
+          setTimeout(() => {
+            const node = tr.querySelector(`[data-path="${CSS.escape(path)}"]`);
+            if (node) node.scrollIntoView({block:'center',behavior:'smooth'});
+          }, 80);
+        }, 50);
+      }
+    });
+  });
+}
+
+function searchInType(el, typeName, mod, pathParts, visited, q, results, depth) {
+  if (depth > 8 || !el) return;
+  const children = getChildren(el, visited);
+  for (const c of children) {
+    const label = c.label;
+    const childPath = (pathParts.length ? pathParts.join('/') : '__root__') + '/' + label;
+    if (label.toLowerCase().includes(q)) {
+      results.push({
+        label, kind: getNodeKind(c.el), module: mod.filename,
+        modName: mod.name, path: childPath, el: c.el
+      });
+    }
+    if (results.length >= 50) return;
+    // Recurse into complex types
+    if (c.resolvedType && allTypes[c.resolvedType] && !visited.has(c.resolvedType)) {
+      const newVis = new Set([...visited, c.resolvedType]);
+      const newParts = [...pathParts.slice(), label];
+      searchInType(allTypes[c.resolvedType].el, c.resolvedType, mod, [pathParts.length ? pathParts.join('/') : '__root__', label].join('/').split('/'), newVis, q, results, depth+1);
+    }
+  }
+}
+
+function getKindBadgeClass(kind) {
+  const map = {complexType:'b-ctype',simpleType:'b-stype',element:'b-elem',attribute:'b-attr',sequence:'b-seq',choice:'b-choice'};
+  return map[kind] || 'b-ref';
+}
+
+// ── Expand/Collapse ─────────────────────────────────────────────────────────
+function expandAll() {
+  if (!activeModule) return;
+  function walk(typeEl, path, visited, depth) {
+    if (depth > MAX_DEPTH || !typeEl) return;
+    expanded.add(path);
+    const children = getChildren(typeEl, visited);
+    for (const c of children) {
+      const childPath = path + '/' + c.label;
+      const newVis = new Set(visited);
+      if (c.resolvedType) newVis.add(c.resolvedType);
+      const childTypeEl = c.resolvedType && allTypes[c.resolvedType] ? allTypes[c.resolvedType].el : c.el;
+      walk(childTypeEl, childPath, newVis, depth + 1);
+    }
+  }
+  walk(activeModule.rootEl, '__root__', new Set([activeModule.rootTypeName]), 0);
+  renderTree(activeModule);
+}
+
+function collapseAll() {
+  expanded = new Set(['__root__']);
+  if (activeModule) renderTree(activeModule);
+}
+
+function closeSb() { sbOpen = false; sb.classList.add('closed'); }
+document.getElementById('tsbtn').onclick = () => { sbOpen = !sbOpen; sb.classList.toggle('closed', !sbOpen); };
+
+// ── Theme Toggle ─────────────────────────────────────────────────────────────
+(function() {
+  const btn = document.getElementById('themebtn');
+  const apply = light => {
+    document.documentElement.classList.toggle('light', light);
+    btn.textContent = light ? '🌙' : '☀️';
+  };
+  const saved = localStorage.getItem('schema-explorer-theme');
+  apply(saved === 'light');
+  btn.addEventListener('click', () => {
+    const isLight = document.documentElement.classList.toggle('light');
+    btn.textContent = isLight ? '🌙' : '☀️';
+    localStorage.setItem('schema-explorer-theme', isLight ? 'light' : 'dark');
+  });
+})();
+
+// ── Panel Resizer ────────────────────────────────────────────────────────────
+(function() {
+  const resizer = document.getElementById('mpresizer');
+  const panel = document.getElementById('mpanel');
+  let startX, startW;
+  resizer.addEventListener('mousedown', e => {
+    startX = e.clientX;
+    startW = panel.getBoundingClientRect().width;
+    resizer.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!resizer.classList.contains('dragging')) return;
+    const dx = e.clientX - startX;
+    const newW = Math.min(520, Math.max(160, startW + dx));
+    panel.style.width = newW + 'px';
+  });
+  document.addEventListener('mouseup', () => {
+    if (!resizer.classList.contains('dragging')) return;
+    resizer.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+})();
+</script>
+</body>
+</html>
