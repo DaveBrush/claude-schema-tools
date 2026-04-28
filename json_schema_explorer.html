@@ -120,6 +120,7 @@ input[type=file]{display:none}
       <span class="pill" id="pill" style="display:none"></span>
       <button class="theme-btn" id="themebtn" title="Toggle light/dark mode">🌙</button>
       <button id="tsbtn">⊟ Properties</button>
+      <button id="clrcbtn" style="display:none" onclick="clearJsonCache()">✕ Clear cache</button>
       <button class="btn-p" onclick="document.getElementById('fi').click()">↑ Load Schema</button>
       <input type="file" id="fi" accept=".json">
     </div>
@@ -160,19 +161,20 @@ input[type=file]{display:none}
   </div>
 </div>
 <script>
-let root=null,expanded=new Set,selected=null,query='',sbOpen=true;
+let root=null,expanded=new Set,selected=null,query='',sbOpen=localStorage.getItem('sb-open')!=='false';
 let matches=[],matchIdx=0;
 const MAX_DEPTH=30;
 
 const fi=document.getElementById('fi'),si=document.getElementById('si'),dz=document.getElementById('dz'),tw=document.getElementById('tw'),tr=document.getElementById('tr'),sb=document.getElementById('sb'),sbb=document.getElementById('sbb'),pill=document.getElementById('pill'),st=document.getElementById('st'),mnav=document.getElementById('mnav'),mstat=document.getElementById('mstat');
+sb.classList.toggle('closed',!sbOpen);
 
-fi.onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{try{load(JSON.parse(ev.target.result),f.name)}catch(e){alert('Invalid JSON: '+e.message)}};r.readAsText(f);fi.value='';};
+fi.onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{try{const txt=ev.target.result;load(JSON.parse(txt),f.name);saveJsonCache(f.name,txt);document.getElementById('clrcbtn').style.display='';}catch(e){alert('Invalid JSON: '+e.message)}};r.readAsText(f);fi.value='';};
 document.body.addEventListener('dragover',e=>e.preventDefault());
-document.body.addEventListener('drop',e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f&&f.name.endsWith('.json')){const r=new FileReader();r.onload=ev=>{try{load(JSON.parse(ev.target.result),f.name)}catch(e){alert('Invalid JSON')}};r.readAsText(f);}});
+document.body.addEventListener('drop',e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f&&f.name.endsWith('.json')){const r=new FileReader();r.onload=ev=>{try{const txt=ev.target.result;load(JSON.parse(txt),f.name);saveJsonCache(f.name,txt);document.getElementById('clrcbtn').style.display='';}catch(e){alert('Invalid JSON')}};r.readAsText(f);}});
 
 si.oninput=()=>{query=si.value.toLowerCase().trim();if(query)runSearch();else{matches=[];matchIdx=0;mnav.style.display='none';render();}};
-document.getElementById('tsbtn').onclick=()=>{sbOpen=!sbOpen;sb.classList.toggle('closed',!sbOpen);};
-function closeSb(){sbOpen=false;sb.classList.add('closed');}
+document.getElementById('tsbtn').onclick=()=>{sbOpen=!sbOpen;sb.classList.toggle('closed',!sbOpen);localStorage.setItem('sb-open',sbOpen?'true':'false');};
+function closeSb(){sbOpen=false;sb.classList.add('closed');localStorage.setItem('sb-open','false');}
 
 function load(schema,name){root=schema;expanded=new Set(['__r__']);selected=null;query='';matches=[];matchIdx=0;si.value='';mnav.style.display='none';pill.textContent=name;pill.style.display='';dz.style.display='none';tw.style.display='flex';render();}
 
@@ -403,7 +405,6 @@ function showSb(path){
   if(snip.properties&&Object.keys(snip.properties).length>5){const ks=Object.keys(snip.properties),t={};ks.slice(0,4).forEach(k=>t[k]=snip.properties[k]);t['…']=`(${ks.length-4} more)`;snip.properties=t;}
   h+=`<div class="s-sec"><div class="s-lbl">Schema snippet</div><div class="snippet">${hljs(JSON.stringify(snip,null,2))}</div></div>`;
   sbb.innerHTML=h;
-  if(!sbOpen){sbOpen=true;sb.classList.remove('closed');}
 }
 
 function row(k,v){return`<div class="s-row"><span class="s-key">${esc(k)}</span><span class="s-val">${v}</span></div>`;}
@@ -447,6 +448,12 @@ function expandAll(){
   render();
 }
 function collapseAll(){expanded=new Set(['__r__']);render();}
+
+// ── File Cache (IndexedDB) ───────────────────────────────────────────────────
+function openCacheDB(db,store){return new Promise((res,rej)=>{const r=indexedDB.open(db,1);r.onupgradeneeded=e=>e.target.result.createObjectStore(store,{keyPath:'name'});r.onsuccess=e=>res(e.target.result);r.onerror=e=>rej(e);});}
+function saveJsonCache(filename,text){openCacheDB('json-explorer-v1','schema').then(db=>{const tx=db.transaction('schema','readwrite');tx.objectStore('schema').put({name:'__last__',filename,text});}).catch(()=>{});}
+function clearJsonCache(){openCacheDB('json-explorer-v1','schema').then(db=>{const tx=db.transaction('schema','readwrite');tx.objectStore('schema').clear();}).catch(()=>{});document.getElementById('clrcbtn').style.display='none';}
+(async function(){try{const db=await openCacheDB('json-explorer-v1','schema');const cached=await new Promise(res=>{const tx=db.transaction('schema','readonly');const req=tx.objectStore('schema').get('__last__');req.onsuccess=e=>res(e.target.result||null);req.onerror=()=>res(null);});if(cached){load(JSON.parse(cached.text),cached.filename);document.getElementById('clrcbtn').style.display='';}}catch(e){}})();
 
 // ── Theme Toggle ─────────────────────────────────────────────────────────────
 (function(){
