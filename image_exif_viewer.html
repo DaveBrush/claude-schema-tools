@@ -434,7 +434,7 @@ function renderOutput(file, url, data, imgW, imgH, clipInfo) {
   if (flat.ColorSpace) basicRows.push(['Color Space', flat.ColorSpace]);
   if (flat.Software) basicRows.push(['Software', flat.Software]);
   if (flat.Artist) basicRows.push(['Artist', flat.Artist]);
-  if (flat.Copyright) basicRows.push(['Copyright', flat.Copyright]);
+  if (flat.Copyright) basicRows.push(['Copyright', nlToBr(flat.Copyright)]);
 
   const warnings = flat.ColorSpace==='sRGB' && !flat.ICC
     ? `<div class="box box-warn">⚠ Color space tagged as sRGB but no embedded ICC color profile found.</div>` : '';
@@ -472,7 +472,7 @@ function renderOutput(file, url, data, imgW, imgH, clipInfo) {
 
   // TIFF
   const tiffGroup = groups.tiff||groups.ifd0||{};
-  const tiffRows = Object.entries(tiffGroup).map(([k,v]) => [k,v]);
+  const tiffRows = Object.entries(tiffGroup).filter(([k]) => k !== 'Copyright').map(([k,v]) => [k,v]);
   if (tiffRows.length) html += makeSection('TIFF / IFD0', tiffRows);
 
   // IPTC
