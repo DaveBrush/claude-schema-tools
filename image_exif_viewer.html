@@ -229,7 +229,14 @@ function fmtVal(v) {
   if (v instanceof Date) return fmtDate(v);
   if (v instanceof Uint8Array || ArrayBuffer.isView(v)) return `<span style="color:var(--text3)">[Binary, ${v.byteLength||v.length} bytes]</span>`;
   if (Array.isArray(v)) return v.length > 20 ? v.slice(0,20).join(', ')+` … (+${v.length-20} more)` : v.join(', ');
-  if (typeof v==='object') { try { return JSON.stringify(v).slice(0,200); } catch { return '[Object]'; } }
+  if (typeof v==='object') {
+    const entries = Object.entries(v);
+    if (entries.length && entries.every(([,x]) => x === null || typeof x !== 'object'))
+      return entries.map(([k,x]) =>
+        `<span style="display:block"><span style="color:var(--text3);font-family:var(--mono);font-size:10px">${k}</span>: ${x===null?'<em style="color:var(--text3)">null</em>':String(x)}</span>`
+      ).join('');
+    try { return JSON.stringify(v); } catch { return '[Object]'; }
+  }
   return String(v);
 }
 function makeTable(rows) {
