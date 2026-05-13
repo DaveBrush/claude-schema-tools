@@ -233,11 +233,11 @@ function fmtVal(v) {
     const entries = Object.entries(v);
     if (entries.length && entries.every(([,x]) => x === null || typeof x !== 'object'))
       return entries.map(([k,x]) =>
-        `<span style="display:block"><span style="color:var(--text3);font-family:var(--mono);font-size:10px">${k}</span>: ${x===null?'<em style="color:var(--text3)">null</em>':String(x)}</span>`
+        `<span style="display:block"><span style="color:var(--text3);font-family:var(--mono);font-size:10px">${k}</span>: ${x===null?'<em style="color:var(--text3)">null</em>':String(x).replace(/\r?\n/g,'<br>')}</span>`
       ).join('');
     try { return JSON.stringify(v); } catch { return '[Object]'; }
   }
-  return String(v);
+  return String(v).replace(/\r?\n/g, '<br>');
 }
 function makeTable(rows) {
   if (!rows.length) return '<p style="padding:14px;color:var(--text3);font-size:12px;text-align:center;font-style:italic">No data in this group</p>';
@@ -310,15 +310,23 @@ function renderOutput(file, url, data, imgW, imgH, clipInfo) {
   const mime = file.type || 'unknown';
   let html = '';
 
-  // Preview
+  // 1. Preview
   html += `<div class="img-preview"><img src="${url}" alt="Preview">
     <div class="img-caption">${file.name} &nbsp;·&nbsp; ${fmtBytes(file.size)} &nbsp;·&nbsp; ${imgW}×${imgH}px &nbsp;·&nbsp; ${mime}</div>
   </div>`;
 
-  // Clipping Path
+  // 2. File
+  html += makeSection('File', [
+    ['File Name', file.name], ['File Size', fmtBytes(file.size)],
+    ['MIME Type', mime], ['File Type', ext],
+    ['Image Size', `${imgW} × ${imgH}`],
+    ['Last Modified', new Date(file.lastModified).toLocaleString('en-GB')]
+  ]);
+
+  // Build clipping path HTML now so it can be placed at position 4 in both branches
   const hasPaths = clipInfo && clipInfo.paths && clipInfo.paths.length > 0;
   const clipName = clipInfo && clipInfo.clipPathName;
-  html += `<div class="sec" id="sec-clip">
+  let clipHtml = `<div class="sec" id="sec-clip">
     <div class="sec-hdr" onclick="toggleSection('sec-clip')">
       <span class="sec-title">Clipping Path</span>
       ${hasPaths ? `<span class="bdg b-ok">${clipInfo.paths.length} path${clipInfo.paths.length>1?'s':''}</span>` : ''}
@@ -326,12 +334,12 @@ function renderOutput(file, url, data, imgW, imgH, clipInfo) {
     </div>
     <div class="sec-body">`;
   if (!hasPaths) {
-    html += `<div class="box box-neutral">No clipping paths found in this image.</div>`;
+    clipHtml += `<div class="box box-neutral">No clipping paths found in this image.</div>`;
   } else {
-    html += clipName
+    clipHtml += clipName
       ? `<div class="box box-ok">Active clipping path: <span class="clip-active">"${clipName}"</span></div>`
       : `<div class="box box-ok">This image contains ${clipInfo.paths.length} clipping path${clipInfo.paths.length>1?' resources':' resource'}. No active path name set (resource 2999).</div>`;
-    html += `<table class="meta-table">
+    clipHtml += `<table class="meta-table">
       <tr><td>Path resources found</td><td>${clipInfo.paths.length}</td></tr>
       <tr><td>Active clip path name</td><td>${clipName ? `<span class="clip-name">"${clipName}"</span>` : '<em style="color:var(--text3)">Not set</em>'}</td></tr>`;
     for (const p of clipInfo.paths) {
@@ -339,16 +347,23 @@ function renderOutput(file, url, data, imgW, imgH, clipInfo) {
       for (const r of p.records) subtypes[r.selector] = (subtypes[r.selector]||0) + 1;
       const detail = Object.entries(subtypes).map(([sel,cnt]) => `${cnt}× ${PATH_SELECTOR[sel]||'Record type '+sel}`).join(', ');
       const label = p.resourceName ? `"${p.resourceName}"` : '(unnamed)';
-      html += `<tr><td>Path ${p.index} — ID ${p.id} (0x${p.id.toString(16).toUpperCase()})</td>
+      clipHtml += `<tr><td>Path ${p.index} — ID ${p.id} (0x${p.id.toString(16).toUpperCase()})</td>
         <td><strong>${label}</strong><br><span style="font-size:11px;color:var(--text3);font-family:var(--mono)">${detail}</span></td></tr>`;
     }
-    html += '</table>';
+    clipHtml += '</table>';
   }
-  html += `</div></div>`;
+  clipHtml += `</div></div>`;
 
   if (!data) {
-    html += `<div class="sec"><div class="sec-hdr"><span class="sec-title">Metadata</span></div>
-      <div class="sec-body"><p style="padding:14px;color:var(--text3);font-size:12px;text-align:center;font-style:italic">No EXIF or metadata found in this image.</p></div></div>`;
+    // 3. Basic Image Information (no-data placeholder)
+    html += `<div class="sec" id="sec-basic">
+      <div class="sec-hdr" onclick="toggleSection('sec-basic')">
+        <span class="sec-title">Basic Image Information</span><span class="sec-tog">▼</span>
+      </div>
+      <div class="sec-body"><p style="padding:14px;color:var(--text3);font-size:12px;text-align:center;font-style:italic">No EXIF or metadata found in this image.</p></div>
+    </div>`;
+    // 4. Clipping Path
+    html += clipHtml;
     output.innerHTML = html; attachReload(); return;
   }
 
@@ -387,12 +402,16 @@ function renderOutput(file, url, data, imgW, imgH, clipInfo) {
   const warnings = flat.ColorSpace==='sRGB' && !flat.ICC
     ? `<div class="box box-warn">⚠ Color space tagged as sRGB but no embedded ICC color profile found.</div>` : '';
 
+  // 3. Basic Image Information
   html += `<div class="sec" id="sec-basic">
     <div class="sec-hdr" onclick="toggleSection('sec-basic')">
       <span class="sec-title">Basic Image Information</span><span class="sec-tog">▼</span>
     </div>
     <div class="sec-body">${warnings}<table class="meta-table">${basicRows.map(([k,v])=>`<tr><td>${k}</td><td>${v}</td></tr>`).join('')}</table></div>
   </div>`;
+
+  // 4. Clipping Path
+  html += clipHtml;
 
   // GPS
   const gps = groups.gps||{};
@@ -437,14 +456,6 @@ function renderOutput(file, url, data, imgW, imgH, clipInfo) {
   const iccGroup = groups.icc||groups.ICC||{};
   const iccRows = Object.entries(iccGroup).map(([k,v]) => [k,v]);
   if (iccRows.length) html += makeSection('ICC Color Profile', iccRows);
-
-  // File
-  html += makeSection('File', [
-    ['File Name', file.name], ['File Size', fmtBytes(file.size)],
-    ['MIME Type', mime], ['File Type', ext],
-    ['Image Size', `${imgW} × ${imgH}`],
-    ['Last Modified', new Date(file.lastModified).toLocaleString('en-GB')]
-  ]);
 
   // Remaining
   const knownKeys = new Set([...Object.keys(exifGroup),...Object.keys(tiffGroup),...Object.keys(iptcGroup),...Object.keys(xmpGroup),...Object.keys(iccGroup),...Object.keys(gps),...makerKeys,'latitude','longitude','altitude']);
