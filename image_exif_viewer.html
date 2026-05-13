@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EXIF Viewer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Georgia', serif; background: #f5f2eb; color: #2a2a2a; min-height: 100vh; }
+  .header { background: #1a3a5c; padding: 14px 24px; }
+  .header h1 { color: #e8d5a3; font-size: 20px; font-weight: normal; letter-spacing: 0.02em; }
+  .header .subtitle { color: #7aa3c8; font-size: 13px; font-family: monospace; }
+  .drop-zone { margin: 28px auto; max-width: 700px; border: 2px dashed #8aafc8; border-radius: 8px; padding: 40px 24px; text-align: center; background: #fff; cursor: pointer; transition: all 0.18s; position: relative; }
+  .drop-zone:hover, .drop-zone.drag-over { border-color: #1a3a5c; background: #eef4fa; }
+  .drop-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+  .drop-icon { font-size: 40px; margin-bottom: 12px; }
+  .drop-zone p { color: #555; font-size: 15px; font-family: Georgia, serif; }
+  .drop-zone small { color: #888; font-size: 12px; font-family: monospace; }
+  .container { max-width: 900px; margin: 0 auto; padding: 0 20px 40px; }
+  .section { background: #fff; border: 1px solid #ccc; border-radius: 4px; margin-bottom: 18px; overflow: hidden; }
+  .section-header { background: #1a3a5c; color: #e8d5a3; font-size: 13px; font-weight: bold; padding: 7px 14px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none; letter-spacing: 0.04em; text-transform: uppercase; }
+  .section-header .byte-info { color: #7aa3c8; font-weight: normal; font-size: 12px; font-family: monospace; text-transform: none; letter-spacing: 0; }
+  .section-header .toggle { color: #7aa3c8; font-size: 16px; transition: transform 0.2s; }
+  .section-header.collapsed .toggle { transform: rotate(-90deg); }
+  .section-body.collapsed { display: none; }
+  table.meta { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.meta tr:nth-child(even) { background: #f9f7f3; }
+  table.meta td { padding: 5px 14px; border-bottom: 1px solid #e8e4dc; vertical-align: top; }
+  table.meta td:first-child { color: #1a3a5c; font-weight: bold; white-space: nowrap; width: 35%; font-family: monospace; font-size: 12px; }
+  table.meta td:last-child { color: #333; word-break: break-all; }
+  .image-preview { background: #fff; border: 1px solid #ccc; border-radius: 4px; margin-bottom: 18px; overflow: hidden; text-align: center; }
+  .image-preview img { max-width: 100%; max-height: 400px; display: block; margin: 0 auto; }
+  .image-caption { font-size: 12px; color: #888; padding: 6px 14px; background: #f9f7f3; border-top: 1px solid #e8e4dc; font-family: monospace; }
+  .warning-box { background: #fff8e1; border: 1px solid #f0c040; border-left: 4px solid #e6a800; padding: 10px 14px; font-size: 13px; color: #6a4800; margin: 10px 14px; border-radius: 3px; }
+  .info-box { background: #e8f4fd; border: 1px solid #90c8e8; border-left: 4px solid #1a3a5c; padding: 10px 14px; font-size: 13px; color: #0d2a40; margin: 10px 14px; border-radius: 3px; }
+  .success-box { background: #eafaf1; border: 1px solid #7dcea0; border-left: 4px solid #1e8449; padding: 10px 14px; font-size: 13px; color: #145a32; margin: 10px 14px; border-radius: 3px; }
+  .no-exif { text-align: center; color: #888; font-style: italic; padding: 20px; font-size: 13px; }
+  .basic-info-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .basic-info-table td { padding: 7px 14px; border-bottom: 1px solid #e8e4dc; vertical-align: top; }
+  .basic-info-table td:first-child { color: #1a3a5c; font-weight: bold; white-space: nowrap; width: 160px; font-family: monospace; font-size: 12px; }
+  .map-link { color: #1a3a5c; text-decoration: underline; cursor: pointer; }
+  #loading { text-align: center; padding: 30px; color: #555; font-style: italic; display: none; }
+  .progress-bar { height: 3px; background: #1a3a5c; animation: prog 1.2s ease-in-out infinite; border-radius: 2px; margin: 8px auto; width: 200px; }
+  @keyframes prog { 0%{width:0} 50%{width:200px} 100%{width:0} }
+  .path-name { font-family: monospace; font-weight: bold; color: #1e8449; font-size: 14px; }
+  .path-active { font-family: monospace; font-weight: bold; color: #c0392b; }
+  .chip { display: inline-block; background: #1a3a5c; color: #e8d5a3; border-radius: 3px; padding: 1px 7px; font-size: 11px; font-family: monospace; margin-left: 6px; vertical-align: middle; }
+  .chip-green { background: #1e8449; color: #fff; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>Image Metadata &amp; EXIF Viewer</h1>
+  <div class="subtitle">EXIF · IPTC · XMP · GPS · MakerNotes · Photoshop Clipping Paths</div>
+</div>
+<div class="container">
+  <div id="drop-zone" class="drop-zone">
+    <input type="file" id="file-input" accept="image/*,.tiff,.tif,.heic,.heif,.avif,.webp,.png,.jpg,.jpeg,.gif,.bmp,.cr2,.nef,.arw,.orf,.rw2,.dng,.psd,.eps">
+    <div class="drop-icon">📷</div>
+    <p>Drop an image here, or click to select a file</p>
+    <small>JPEG · TIFF · PNG · HEIC · WebP · PSD · RAW (CR2, NEF, ARW, DNG…)</small>
+  </div>
+  <div id="loading"><div>Parsing image metadata…</div><div class="progress-bar"></div></div>
+  <div id="output"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/full.umd.js"></script>
+<script>
+// ── Photoshop 8BIM clipping path parser ──────────────────────────────────────
+// Resource IDs 0x07D0–0x0BB6 (2000–2999) are path resources.
+// ID 0x0BB7 (2999) = name of the clipping path.
+// Each resource: '8BIM' + 2-byte ID + pascal string name (padded to even) + 4-byte length + data.
+
+function parse8BIM(buffer) {
+  const view = new DataView(buffer);
+  const u8 = new Uint8Array(buffer);
+  const paths = [];   // { id, resourceName, points }
+  let clipPathName = null;  // from resource 2999
+  let activeClipId = null;  // from resource 2999 value
+  let i = 0;
+
+  function readUint16(pos) { return view.getUint16(pos, false); }
+  function readUint32(pos) { return view.getUint32(pos, false); }
+  function readStr(pos) {
+    // UTF-8 decode
+    let s = '';
+    while (pos < u8.length && u8[pos] !== 0) { s += String.fromCharCode(u8[pos++]); }
+    return s;
+  }
+
+  while (i + 12 <= u8.length) {
+    // Look for '8BIM' marker
+    if (u8[i]===0x38 && u8[i+1]===0x42 && u8[i+2]===0x49 && u8[i+3]===0x4D) {
+      const resId = readUint16(i + 4);
+      // Pascal string name: length byte + chars, padded to even total
+      const nameLen = u8[i + 6];
+      const namePadded = nameLen + (((nameLen + 1) % 2 === 0) ? 0 : 1); // total bytes inc length byte, padded to even
+      // Actually: pascal string is nameLen byte + nameLen chars, then padded so total (1+nameLen) is even
+      const pascalTotal = nameLen === 0 ? 2 : (1 + nameLen) + ((1 + nameLen) % 2);
+      const dataLenOffset = i + 6 + pascalTotal;
+      if (dataLenOffset + 4 > u8.length) break;
+      const dataLen = readUint32(dataLenOffset);
+      const dataStart = dataLenOffset + 4;
+      const dataEnd = dataStart + dataLen;
+      // Pad dataLen to even for next block offset
+      const blockEnd = dataEnd + (dataLen % 2);
+
+      // Resource 0x0BB7 = 2999 = name of clipping path
+      if (resId === 0x0BB7) {
+        // Unicode string: 4-byte count then UTF-16BE chars
+        if (dataLen >= 4) {
+          const charCount = readUint32(dataStart);
+          let name = '';
+          for (let c = 0; c < charCount && dataStart + 4 + c*2 + 1 < dataEnd; c++) {
+            const code = readUint16(dataStart + 4 + c * 2);
+            name += String.fromCharCode(code);
+          }
+          clipPathName = name || null;
+        }
+      }
+
+      // Path resources: 0x07D0 (2000) to 0x0BB6 (2998)
+      if (resId >= 0x07D0 && resId <= 0x0BB6) {
+        // Pascal string name of this path resource
+        let pathResName = '';
+        if (nameLen > 0) {
+          for (let b = 0; b < nameLen; b++) pathResName += String.fromCharCode(u8[i + 7 + b]);
+        }
+        // Parse path records: each is 26 bytes
+        const records = [];
+        for (let p = dataStart; p + 26 <= dataEnd; p += 26) {
+          const selector = readUint16(p);
+          records.push({ selector });
+        }
+        paths.push({
+          id: resId,
+          index: resId - 0x07D0,
+          resourceName: pathResName,
+          recordCount: records.length,
+          records
+        });
+      }
+
+      i = blockEnd;
+    } else {
+      i++;
+    }
+  }
+
+  return { paths, clipPathName };
+}
+
+// Find Photoshop APP13 segment in JPEG and extract 8BIM data
+function extractApp13(buffer) {
+  const u8 = new Uint8Array(buffer);
+  const segments = [];
+  let i = 0;
+  // Must start with FF D8
+  if (u8[0] !== 0xFF || u8[1] !== 0xD8) return null;
+  i = 2;
+  while (i + 4 < u8.length) {
+    if (u8[i] !== 0xFF) { i++; continue; }
+    const marker = u8[i + 1];
+    if (marker === 0xED) { // APP13
+      const segLen = (u8[i+2] << 8) | u8[i+3]; // includes 2-byte length field
+      const segData = buffer.slice(i + 4, i + 2 + segLen);
+      segments.push(segData);
+    }
+    if (marker === 0xD9 || marker === 0xDA) break; // EOI or SOS
+    const segLen2 = (u8[i+2] << 8) | u8[i+3];
+    i += 2 + segLen2;
+  }
+  if (!segments.length) return null;
+  // Merge segments, skip 'Photoshop 3.0\0' header (14 bytes) from each
+  const parts = segments.map(s => {
+    const u = new Uint8Array(s);
+    // Check for Photoshop 3.0\0 header
+    const hdr = String.fromCharCode(...u.slice(0, 14));
+    if (hdr.startsWith('Photoshop 3.0')) return s.slice(14);
+    return s;
+  });
+  const total = parts.reduce((a, b) => a + b.byteLength, 0);
+  const merged = new Uint8Array(total);
+  let off = 0;
+  for (const p of parts) { merged.set(new Uint8Array(p), off); off += p.byteLength; }
+  return merged.buffer;
+}
+
+// Also handle TIFF with ImageResourceBlock tag (tag 34377 = 0x8649)
+function extractTiffPhotoshop(buffer) {
+  // Very basic: scan for 8BIM sequences and return a window
+  const u8 = new Uint8Array(buffer);
+  // Look for first '8BIM'
+  for (let i = 0; i < u8.length - 4; i++) {
+    if (u8[i]===0x38 && u8[i+1]===0x42 && u8[i+2]===0x49 && u8[i+3]===0x4D) {
+      return buffer.slice(i);
+    }
+  }
+  return null;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function fmtBytes(b) {
+  if (b < 1024) return b + ' bytes';
+  if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+  return (b/1048576).toFixed(2) + ' MB';
+}
+function fmtDate(v) {
+  if (!v) return null;
+  if (v instanceof Date) return v.toLocaleString('en-GB', { dateStyle: 'long', timeStyle: 'medium' });
+  const s = String(v);
+  const m = s.match(/^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/);
+  if (m) return new Date(+m[1],+m[2]-1,+m[3],+m[4],+m[5],+m[6]).toLocaleString('en-GB',{dateStyle:'long',timeStyle:'medium'});
+  return s;
+}
+function fmtVal(v) {
+  if (v===undefined||v===null) return '<em style="color:#aaa">—</em>';
+  if (v instanceof Date) return fmtDate(v);
+  if (v instanceof Uint8Array || ArrayBuffer.isView(v)) return `<span style="color:#aaa">[Binary, ${v.byteLength||v.length} bytes]</span>`;
+  if (Array.isArray(v)) return v.length > 20 ? v.slice(0,20).join(', ')+` … (+${v.length-20} more)` : v.join(', ');
+  if (typeof v==='object') { try { return JSON.stringify(v).slice(0,200); } catch { return '[Object]'; } }
+  return String(v);
+}
+function makeTable(rows) {
+  if (!rows.length) return '<p class="no-exif">No data in this group</p>';
+  return `<table class="meta">${rows.map(([k,v])=>`<tr><td>${k}</td><td>${fmtVal(v)}</td></tr>`).join('')}</table>`;
+}
+function makeSection(title, rows, badge) {
+  const id = 'sec_'+Math.random().toString(36).slice(2);
+  const badgeHtml = badge ? `<span class="chip chip-green">${badge}</span>` : '';
+  return `<div class="section">
+    <div class="section-header" onclick="toggleSection('${id}')">
+      <span>${title}${badgeHtml}</span><span class="toggle" id="tog_${id}">▼</span>
+    </div>
+    <div class="section-body" id="${id}">${makeTable(rows)}</div>
+  </div>`;
+}
+window.toggleSection = function(id) {
+  const body = document.getElementById(id);
+  const tog = document.getElementById('tog_'+id);
+  const hdr = body.previousElementSibling;
+  body.classList.toggle('collapsed');
+  hdr.classList.toggle('collapsed', body.classList.contains('collapsed'));
+};
+function dms(deg, ref) {
+  const d = Math.floor(Math.abs(deg)), mAll = (Math.abs(deg)-d)*60;
+  const m = Math.floor(mAll), s = ((mAll-m)*60).toFixed(2);
+  return `${d}° ${m}' ${s}" ${ref}`;
+}
+// Selector name lookup
+const PATH_SELECTOR = {0:'Closed subpath length record',1:'Closed subpath Bezier knot (linked)',2:'Closed subpath Bezier knot (unlinked)',3:'Open subpath length record',4:'Open subpath Bezier knot (linked)',5:'Open subpath Bezier knot (unlinked)',6:'Path fill rule record',7:'Clipboard record',8:'Initial fill rule record'};
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+const output = document.getElementById('output');
+const loading = document.getElementById('loading');
+
+dropZone.addEventListener('dragover', e=>{e.preventDefault();dropZone.classList.add('drag-over');});
+dropZone.addEventListener('dragleave', ()=>dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e=>{e.preventDefault();dropZone.classList.remove('drag-over');const f=e.dataTransfer.files[0];if(f)processFile(f);});
+fileInput.addEventListener('change', e=>{if(e.target.files[0])processFile(e.target.files[0]);});
+
+async function processFile(file) {
+  loading.style.display='block'; output.innerHTML=''; dropZone.style.display='none';
+  const url = URL.createObjectURL(file);
+  let exifData=null, imgW=0, imgH=0;
+  try {
+    exifData = await exifr.parse(file,{tiff:true,exif:true,gps:true,iptc:true,xmp:true,icc:true,jfif:true,ihdr:true,makerNote:true,multiSegment:true,mergeOutput:false,translateValues:true,reviveValues:true,sanitize:true});
+  } catch(e) { try { exifData=await exifr.parse(file); } catch {} }
+  await new Promise(res=>{const img=new Image();img.onload=()=>{imgW=img.naturalWidth;imgH=img.naturalHeight;res();};img.onerror=res;img.src=url;});
+
+  // Read raw buffer for 8BIM parsing
+  let clipInfo = null;
+  try {
+    const buf = await file.arrayBuffer();
+    const ext = file.name.split('.').pop().toLowerCase();
+    let bimBuf = null;
+    if (['jpg','jpeg'].includes(ext)) bimBuf = extractApp13(buf);
+    else bimBuf = extractTiffPhotoshop(buf);
+    if (bimBuf) clipInfo = parse8BIM(bimBuf);
+  } catch(e) { console.warn('8BIM parse error', e); }
+
+  loading.style.display='none';
+  renderOutput(file, url, exifData, imgW, imgH, clipInfo);
+}
+
+function renderOutput(file, url, data, imgW, imgH, clipInfo) {
+  const ext = file.name.split('.').pop().toUpperCase();
+  const mime = file.type||'unknown';
+  let html = '';
+
+  // Preview
+  html += `<div class="image-preview"><img src="${url}" alt="Preview">
+    <div class="image-caption">${file.name} &nbsp;·&nbsp; ${fmtBytes(file.size)} &nbsp;·&nbsp; ${imgW}×${imgH} px &nbsp;·&nbsp; ${mime}</div>
+  </div>`;
+
+  // ── Clipping Path section (prominent, near top) ────────────────────────────
+  const hasPaths = clipInfo && clipInfo.paths && clipInfo.paths.length > 0;
+  const clipName = clipInfo && clipInfo.clipPathName;
+
+  html += `<div class="section">
+    <div class="section-header" onclick="toggleSection('clip')">
+      <span>Clipping Path${hasPaths ? `<span class="chip chip-green">${clipInfo.paths.length} path${clipInfo.paths.length>1?'s':''} found</span>` : ''}</span>
+      <span class="toggle" id="tog_clip">▼</span>
+    </div>
+    <div class="section-body" id="clip">`;
+
+  if (!hasPaths) {
+    html += `<div class="info-box">✓ No clipping paths found in this image.</div>`;
+  } else {
+    if (clipName) {
+      html += `<div class="success-box">✂ Active clipping path name: <span class="path-active">"${clipName}"</span></div>`;
+    } else {
+      html += `<div class="success-box">✂ This image contains ${clipInfo.paths.length} clipping path${clipInfo.paths.length>1?' resources':' resource'}. No active clipping path name set (resource 2999).</div>`;
+    }
+    html += `<table class="meta">
+      <tr><td>Path resources found</td><td>${clipInfo.paths.length}</td></tr>
+      <tr><td>Active clip path name<br><span style="font-weight:normal;color:#888;font-size:11px">(Photoshop resource 2999)</span></td><td>${clipName ? `<span class="path-name">"${clipName}"</span>` : '<em style="color:#aaa">Not set</em>'}</td></tr>`;
+    for (const p of clipInfo.paths) {
+      const subtypes = {};
+      for (const r of p.records) { subtypes[r.selector] = (subtypes[r.selector]||0)+1; }
+      const detail = Object.entries(subtypes).map(([sel,cnt])=>`${cnt}× ${PATH_SELECTOR[sel]||'Record type '+sel}`).join(', ');
+      const label = p.resourceName ? `"${p.resourceName}"` : `(unnamed)`;
+      html += `<tr><td>Path ${p.index} — resource ID ${p.id} (${p.id.toString(16).toUpperCase()})</td>
+        <td><strong>${label}</strong><br><span style="font-size:11px;color:#666;font-family:monospace">${detail}</span></td></tr>`;
+    }
+    html += '</table>';
+  }
+  html += `</div></div>`;
+
+  if (!data) {
+    html += `<div class="section"><div class="section-body"><p class="no-exif">No EXIF or metadata found in this image.</p></div></div>`;
+    output.innerHTML = html; attachReload(); return;
+  }
+
+  const groups = data;
+  const flat = {};
+  for (const g of Object.values(groups)) { if(g&&typeof g==='object'&&!Array.isArray(g)) Object.assign(flat,g); }
+
+  // Basic info
+  const cam = flat.Make&&flat.Model ? `${flat.Make} ${flat.Model}` : (flat.Model||flat.Make||null);
+  const focalMM = flat.FocalLength ? (typeof flat.FocalLength==='number'?flat.FocalLength.toFixed(1)+'mm':flat.FocalLength) : null;
+  const focal35 = flat.FocalLengthIn35mmFormat ? flat.FocalLengthIn35mmFormat+'mm (35mm equiv.)' : null;
+  const lens = flat.LensModel||flat.LensInfo||flat.Lens||null;
+  const lensStr = Array.isArray(lens) ? lens.filter(Boolean).join(' - ')+'mm' : lens;
+  const shutter = flat.ExposureTime ? (flat.ExposureTime<1?`1/${Math.round(1/flat.ExposureTime)}`:flat.ExposureTime)+' sec' : null;
+  const aperture = flat.FNumber ? `f/${flat.FNumber}` : (flat.ApertureValue ? `f/${Math.pow(2,flat.ApertureValue/2).toFixed(1)}` : null);
+  const iso = flat.ISO||flat.ISOSpeedRatings;
+  const ev = flat.ExposureCompensation;
+  let basicRows = [];
+  if (cam) basicRows.push(['Camera', cam]);
+  if (lensStr) basicRows.push(['Lens', lensStr]);
+  if (focalMM) basicRows.push(['Focal Length', focal35?`${focalMM} (${focal35})`:focalMM]);
+  if (shutter||aperture||iso||ev!==undefined) basicRows.push(['Exposure', [shutter,aperture,iso?'ISO '+iso:null,ev!=null&&ev!==0?'EV '+ev:null].filter(Boolean).join(' · ')]);
+  if (flat.ExposureProgram) basicRows.push(['Exposure Program', flat.ExposureProgram]);
+  if (flat.Flash!==undefined) basicRows.push(['Flash', String(flat.Flash)]);
+  if (flat.FocusMode||flat.AFAreaMode) basicRows.push(['Focus Mode', flat.FocusMode||flat.AFAreaMode]);
+  if (flat.WhiteBalance) basicRows.push(['White Balance', flat.WhiteBalance]);
+  if (flat.MeteringMode) basicRows.push(['Metering Mode', flat.MeteringMode]);
+  const dateTaken = flat.DateTimeOriginal||flat.CreateDate||flat.DateTime;
+  if (dateTaken) basicRows.push(['Date/Time', `<strong>${fmtDate(dateTaken)}</strong>`]);
+  basicRows.push(['File', `<strong>${imgW}×${imgH}</strong> ${ext} &nbsp; ${fmtBytes(file.size)}`]);
+  if (flat.ColorSpace) basicRows.push(['Color Space', flat.ColorSpace]);
+  if (flat.Software) basicRows.push(['Software', flat.Software]);
+  if (flat.Artist) basicRows.push(['Artist', flat.Artist]);
+  if (flat.Copyright) basicRows.push(['Copyright', flat.Copyright]);
+
+  let warnings = flat.ColorSpace==='sRGB'&&!flat.ICC ? `<div class="warning-box">⚠ Color space tagged as sRGB but no embedded color profile found.</div>` : '';
+  html += `<div class="section"><div class="section-header" onclick="toggleSection('basic')"><span>Basic Image Information</span><span class="toggle" id="tog_basic">▼</span></div>
+    <div class="section-body" id="basic">${warnings}<table class="basic-info-table">${basicRows.map(([k,v])=>`<tr><td>${k}</td><td>${v}</td></tr>`).join('')}</table></div></div>`;
+
+  // GPS
+  const gps = groups.gps||{};
+  if (gps.latitude!==undefined||gps.longitude!==undefined) {
+    const lat=gps.latitude??flat.GPSLatitude, lon=gps.longitude??flat.GPSLongitude, alt=gps.altitude??flat.GPSAltitude;
+    const latRef=flat.GPSLatitudeRef||(lat>=0?'N':'S'), lonRef=flat.GPSLongitudeRef||(lon>=0?'E':'W');
+    const gpsRows=[];
+    if(lat!=null) gpsRows.push(['Latitude',`${lat.toFixed(6)}° &nbsp; <span style="color:#555">${dms(lat,latRef)}</span>`]);
+    if(lon!=null) gpsRows.push(['Longitude',`${lon.toFixed(6)}° &nbsp; <span style="color:#555">${dms(lon,lonRef)}</span>`]);
+    if(alt!=null) gpsRows.push(['Altitude',`${typeof alt==='number'?alt.toFixed(1):alt} m`]);
+    if(flat.GPSSpeed) gpsRows.push(['Speed',flat.GPSSpeed]);
+    if(flat.GPSImgDirection) gpsRows.push(['Direction',flat.GPSImgDirection+'°']);
+    if(lat!=null&&lon!=null) gpsRows.push(['Map',`<a class="map-link" href="https://maps.google.com/?q=${lat},${lon}" target="_blank">Google Maps ↗</a> &nbsp; <a class="map-link" href="https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}&zoom=15" target="_blank">OpenStreetMap ↗</a>`]);
+    html += makeSection('GPS / Location', gpsRows);
+  }
+
+  // EXIF
+  const exifGroup=groups.exif||groups.Exif||{};
+  const exifRows=Object.entries(exifGroup).filter(([k])=>!['MakerNote','UserComment'].includes(k)).map(([k,v])=>[k,v]);
+  if(exifRows.length) html += makeSection('EXIF', exifRows);
+
+  // TIFF
+  const tiffGroup=groups.tiff||groups.ifd0||{};
+  const tiffRows=Object.entries(tiffGroup).map(([k,v])=>[k,v]);
+  if(tiffRows.length) html += makeSection('TIFF / IFD0', tiffRows);
+
+  // IPTC
+  const iptcGroup=groups.iptc||groups.IPTC||{};
+  const iptcRows=Object.entries(iptcGroup).map(([k,v])=>[k,v]);
+  if(iptcRows.length) html += makeSection('IPTC', iptcRows);
+
+  // XMP
+  const xmpGroup=groups.xmp||groups.XMP||{};
+  const xmpRows=Object.entries(xmpGroup).map(([k,v])=>[k,v]);
+  if(xmpRows.length) html += makeSection('XMP', xmpRows);
+
+  // MakerNotes
+  const makerKeys=Object.keys(flat).filter(k=>k.toLowerCase().includes('maker')||/^(Canon|Nikon|Sony|Fuji|Olympus|Panasonic|Apple|Samsung|Leica|Pentax)/.test(k));
+  if(makerKeys.length) html += makeSection('MakerNotes', makerKeys.map(k=>[k,flat[k]]));
+
+  // ICC
+  const iccGroup=groups.icc||groups.ICC||{};
+  const iccRows=Object.entries(iccGroup).map(([k,v])=>[k,v]);
+  if(iccRows.length) html += makeSection('ICC Color Profile', iccRows);
+
+  // File
+  html += makeSection('File', [
+    ['File Name', file.name], ['File Size', fmtBytes(file.size)],
+    ['MIME Type', mime], ['File Type', ext],
+    ['Image Size', `${imgW} × ${imgH}`],
+    ['Last Modified', new Date(file.lastModified).toLocaleString('en-GB')]
+  ]);
+
+  // Remaining
+  const knownKeys=new Set([...Object.keys(exifGroup),...Object.keys(tiffGroup),...Object.keys(iptcGroup),...Object.keys(xmpGroup),...Object.keys(iccGroup),...Object.keys(gps),...makerKeys,'latitude','longitude','altitude']);
+  const remainRows=Object.entries(flat).filter(([k])=>!knownKeys.has(k)).map(([k,v])=>[k,v]);
+  if(remainRows.length) html += makeSection('Other / Composite', remainRows);
+
+  output.innerHTML = html;
+  attachReload();
+}
+
+function attachReload() {
+  dropZone.style.display='';
+  dropZone.style.padding='14px 24px';
+  dropZone.innerHTML=`<input type="file" id="file-input2" accept="image/*">
+    <span style="font-size:14px;color:#555;font-family:monospace">📷 Load another image</span>`;
+  document.getElementById('file-input2').addEventListener('change',e=>{if(e.target.files[0])processFile(e.target.files[0]);});
+}
+</script>
+</body>
+</html>

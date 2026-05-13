@@ -4,20 +4,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-Two standalone, zero-dependency browser tools for exploring schemas. Each is a single self-contained HTML file — all CSS, JS, and SVG inline. Open directly in a browser; no build step, no server, no npm.
+Three standalone browser tools. Open any file directly in a browser; no build step, no server, no npm.
 
-- [json_schema_explorer.html](json_schema_explorer.html) — JSON Schema viewer
-- [xsd_schema_explorer.html](xsd_schema_explorer.html) — XSD / GDSN catalogue schema viewer
+- [json_schema_explorer.html](json_schema_explorer.html) — JSON Schema viewer (zero-dependency, fully self-contained)
+- [xsd_schema_explorer.html](xsd_schema_explorer.html) — XSD / GDSN catalogue schema viewer (zero-dependency, fully self-contained)
+- [image_exif_viewer.html](image_exif_viewer.html) — Image metadata viewer: EXIF, IPTC, XMP, GPS, ICC, Photoshop clipping paths. Loads `exifr@7.1.3` from jsDelivr CDN — requires an internet connection.
 
 ## Running the tools
 
-Open either file directly in a browser (`File → Open`, or drag the file onto a browser tab). Changes take effect on reload. Use a local dev server (e.g. VS Code Live Server extension) for faster iteration.
+Open any file directly in a browser (`File → Open`, or drag onto a browser tab). Changes take effect on reload. Use a local dev server (e.g. VS Code Live Server extension) for faster iteration. Note: `image_exif_viewer.html` requires internet access for the `exifr` CDN script.
 
 ## Architecture
 
-### Shared design conventions
+### Shared design conventions (schema explorers)
 
-Both tools use the same CSS custom-property theme system. Dark mode is the default; `html.light` on the root element switches to light. Theme preference is saved to `localStorage` under the key `schema-explorer-theme` — both files share this key so they stay in sync.
+Both schema explorer tools use the same CSS custom-property theme system. Dark mode is the default; `html.light` on the root element switches to light. Theme preference is saved to `localStorage` under the key `schema-explorer-theme` — both files share this key so they stay in sync.
 
 Font pair: **JetBrains Mono** (code/mono) and **Outfit** (UI), loaded from Google Fonts. Loaded via a single `<link>` at the top of each file — the only external dependency.
 
@@ -71,6 +72,24 @@ Layout: fixed header → flex body → tree area + sidebar. Sidebar slides in/ou
 
 **XSD namespace handling**: `getSchemaPrefix(doc)` finds the `xs`/`xsd` prefix by inspecting `xmlns:*` attributes. `localName(el)` strips any namespace prefix from element tag names. Type lookups always strip prefixes before indexing/lookup.
 
+### image_exif_viewer.html
+
+**Style**: Light-only, navy/cream palette (not the shared theme system). Georgia serif body, monospace for labels. No dark mode toggle, no `localStorage` theme key.
+
+**External dependency**: `exifr@7.1.3` from `cdn.jsdelivr.net/npm/exifr`. All EXIF/IPTC/XMP/GPS/ICC parsing is delegated to this library.
+
+**Key data flow**:
+1. Drop zone / file input → `processFile(file)` — creates object URL, calls `exifr.parse()` with all group flags enabled, loads image for natural dimensions, reads raw `ArrayBuffer` for 8BIM parsing.
+2. `renderOutput(file, url, data, imgW, imgH, clipInfo)` — builds the full HTML output. `data` is the `exifr` result object keyed by group (`exif`, `tiff`, `gps`, `iptc`, `xmp`, `icc`). A flat merge (`flat`) is also built for convenience.
+3. Clipping path section rendered first (prominent position) from `clipInfo`.
+4. `makeSection(title, rows)` — collapsible section with `toggleSection(id)`.
+5. After render, `attachReload()` shrinks the drop zone to a compact "Load another image" strip.
+
+**8BIM / Photoshop clipping path parsing** (custom, no library):
+- `extractApp13(buffer)` — scans JPEG for `0xFF 0xED` (APP13) segments, strips `Photoshop 3.0\0` headers, merges multiple segments.
+- `extractTiffPhotoshop(buffer)` — scans raw buffer for first `8BIM` marker (TIFF/PSD fallback).
+- `parse8BIM(buffer)` — iterates 8BIM resource blocks. Path resources are IDs `0x07D0`–`0x0BB6` (2000–2998); resource `0x0BB7` (2999) is the active clipping path name (UTF-16BE unicode string).
+
 ## Known issues / areas to improve
 
 **JSON explorer**
@@ -82,3 +101,8 @@ Layout: fixed header → flex body → tree area + sidebar. Sidebar slides in/ou
 - `_inherited` flag set on children from base type extension but never used for visual differentiation
 - No `xsd:include` support (only implicit cross-file resolution via the shared index)
 - Documentation snippet comments truncated to 80 chars in `formatXmlSnippet`
+
+**EXIF viewer**
+- 8BIM path record coordinates are not decoded (selector type counts shown, not actual Bezier point data)
+- `extractTiffPhotoshop` is a naive byte scan — may mis-detect `8BIM` sequences in image data for non-PSD TIFFs
+- MakerNotes detection relies on key-name heuristics; structured MakerNote groups from exifr aren't broken out separately
