@@ -8,25 +8,29 @@ Three standalone browser tools. Open any file directly in a browser; no build st
 
 - [json_schema_explorer.html](json_schema_explorer.html) — JSON Schema viewer (zero-dependency, fully self-contained)
 - [xsd_schema_explorer.html](xsd_schema_explorer.html) — XSD / GDSN catalogue schema viewer (zero-dependency, fully self-contained)
-- [image_exif_viewer.html](image_exif_viewer.html) — Image metadata viewer: EXIF, IPTC, XMP, GPS, ICC, Photoshop clipping paths. Loads `exifr@7.1.3` from jsDelivr CDN — requires an internet connection.
+- [image_exif_viewer.html](image_exif_viewer.html) — Image metadata viewer: EXIF, IPTC, XMP, GPS, ICC, Photoshop clipping paths. Loads `exifr@7.1.3` and `utif@2.0.1` from jsDelivr CDN — requires an internet connection.
 
 ## Running the tools
 
-Open any file directly in a browser (`File → Open`, or drag onto a browser tab). Changes take effect on reload. Use a local dev server (e.g. VS Code Live Server extension) for faster iteration. Note: `image_exif_viewer.html` requires internet access for the `exifr` CDN script.
+Open any file directly in a browser (`File → Open`, or drag onto a browser tab). Changes take effect on reload. Use a local dev server (e.g. VS Code Live Server extension) for faster iteration. Note: `image_exif_viewer.html` requires internet access for the `exifr` and `utif` CDN scripts.
 
 ## Architecture
 
-### Shared design conventions (schema explorers)
+### Shared design conventions (all three tools)
 
-Both schema explorer tools use the same CSS custom-property theme system. Dark mode is the default; `html.light` on the root element switches to light. Theme preference is saved to `localStorage` under the key `schema-explorer-theme` — both files share this key so they stay in sync.
+All three tools share the same CSS custom-property theme system. Dark mode is the default; `html.light` on the root element switches to light. Theme preference is saved to `localStorage` under the key `schema-explorer-theme` — all files share this key so they stay in sync.
 
-Font pair: **JetBrains Mono** (code/mono) and **Outfit** (UI), loaded from Google Fonts. Loaded via a single `<link>` at the top of each file — the only external dependency.
+Font pair: **JetBrains Mono** (code/mono) and **Outfit** (UI), loaded from Google Fonts via a single `<link>` at the top of each file.
 
 CSS variables define the full colour palette (`--bg` through `--bg5`, `--text` through `--text3`, named semantic colours). All component styles consume these variables; never hard-code colours.
 
-Badge classes follow the pattern `bdg b-{type}` (e.g. `b-str`, `b-ctype`, `b-seq`). Type badges use semantic colours consistent across both files.
+Each tool has its own accent colour: JSON explorer = `--accent` blue, XSD explorer = `--teal`, EXIF viewer = `--pink` (`#e879a8`).
 
-Layout: fixed header → flex body → tree area + sidebar. Sidebar slides in/out via `width` transition (`sidebar.closed` removes it). The XSD explorer adds a resizable left module panel.
+The schema explorers use a fixed-height layout (header → flex body → tree + sidebar). The EXIF viewer uses a scrollable content area (sticky header → `.content` with `overflow-y: auto`).
+
+Badge classes follow the pattern `bdg b-{type}`. The schema explorers use `b-str`, `b-ctype`, `b-seq` etc; the EXIF viewer uses `b-ok`, `b-warn`, `b-neutral`.
+
+The schema explorers add a resizable left module panel (XSD) or toolbar (JSON). The EXIF viewer has no sidebar — results render as a vertical stack of collapsible `.sec` cards.
 
 ### json_schema_explorer.html
 
@@ -74,16 +78,16 @@ Layout: fixed header → flex body → tree area + sidebar. Sidebar slides in/ou
 
 ### image_exif_viewer.html
 
-**Style**: Light-only, navy/cream palette (not the shared theme system). Georgia serif body, monospace for labels. No dark mode toggle, no `localStorage` theme key.
+**Style**: Shares the full CSS custom-property theme system and font pair with the schema explorers. Accent colour is `--pink` (`#e879a8`). Scrollable layout (sticky header, `.content` scrolls). Collapsible sections use `.sec` / `.sec-hdr` / `.sec-body` / `.sec-tog` classes; toggling adds/removes `.collapsed` on the outer `.sec` element.
 
-**External dependency**: `exifr@7.1.3` from `cdn.jsdelivr.net/npm/exifr`. All EXIF/IPTC/XMP/GPS/ICC parsing is delegated to this library.
+**External dependencies**: `exifr@7.1.3` (EXIF/IPTC/XMP/GPS/ICC parsing) and `utif@2.0.1` (TIFF pixel decoding for browser preview), both from `cdn.jsdelivr.net/npm`.
 
 **Key data flow**:
-1. Drop zone / file input → `processFile(file)` — creates object URL, calls `exifr.parse()` with all group flags enabled, loads image for natural dimensions, reads raw `ArrayBuffer` for 8BIM parsing.
+1. Drop zone / header button → `processFile(file)` — creates object URL, calls `exifr.parse()` with all group flags enabled, attempts native `<img>` load for dimensions. Reads raw `ArrayBuffer` once; if native load failed (e.g. TIFF in Chrome/Firefox), decodes with `UTIF.decodeImages()` and replaces the blob URL with a canvas-derived PNG blob.
 2. `renderOutput(file, url, data, imgW, imgH, clipInfo)` — builds the full HTML output. `data` is the `exifr` result object keyed by group (`exif`, `tiff`, `gps`, `iptc`, `xmp`, `icc`). A flat merge (`flat`) is also built for convenience.
-3. Clipping path section rendered first (prominent position) from `clipInfo`.
-4. `makeSection(title, rows)` — collapsible section with `toggleSection(id)`.
-5. After render, `attachReload()` shrinks the drop zone to a compact "Load another image" strip.
+3. Section order: image preview → File → Basic Image Information → Clipping Path → GPS → EXIF → TIFF/IFD0 → IPTC → XMP → MakerNotes → ICC → Other/Composite.
+4. `makeSection(title, rows)` — collapsible `.sec` card. `fmtVal(v)` renders values: objects with all-primitive properties show as `key: value` line pairs (handles XMP lang-alt); newlines in strings/values render as `<br>`.
+5. After render, `attachReload()` changes the drop zone to a compact `.drop-small` strip.
 
 **8BIM / Photoshop clipping path parsing** (custom, no library):
 - `extractApp13(buffer)` — scans JPEG for `0xFF 0xED` (APP13) segments, strips `Photoshop 3.0\0` headers, merges multiple segments.
@@ -106,3 +110,4 @@ Layout: fixed header → flex body → tree area + sidebar. Sidebar slides in/ou
 - 8BIM path record coordinates are not decoded (selector type counts shown, not actual Bezier point data)
 - `extractTiffPhotoshop` is a naive byte scan — may mis-detect `8BIM` sequences in image data for non-PSD TIFFs
 - MakerNotes detection relies on key-name heuristics; structured MakerNote groups from exifr aren't broken out separately
+- TIFF preview via UTIF: CMYK TIFFs are displayed as RGB (no true CMYK render); only the first IFD (page 0) is previewed for multi-page TIFFs; very large TIFFs may be slow to decode

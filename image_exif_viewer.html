@@ -125,6 +125,7 @@ a.map-link:hover{text-decoration:underline}
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/full.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/utif@2.0.1/UTIF.js"></script>
 <script>
 // ── Photoshop 8BIM clipping path parser ──────────────────────────────────────
 function parse8BIM(buffer) {
@@ -288,18 +289,43 @@ fileInput.addEventListener('change', e => { if (e.target.files[0]) processFile(e
 
 async function processFile(file) {
   loading.style.display = 'block'; output.innerHTML = ''; dropZone.style.display = 'none';
-  const url = URL.createObjectURL(file);
+  let url = URL.createObjectURL(file);
   let exifData = null, imgW = 0, imgH = 0;
   try {
     exifData = await exifr.parse(file, {tiff:true,exif:true,gps:true,iptc:true,xmp:true,icc:true,jfif:true,ihdr:true,makerNote:true,multiSegment:true,mergeOutput:false,translateValues:true,reviveValues:true,sanitize:true});
   } catch(e) { try { exifData = await exifr.parse(file); } catch {} }
+  // Try native browser image load
   await new Promise(res => { const img = new Image(); img.onload = () => { imgW = img.naturalWidth; imgH = img.naturalHeight; res(); }; img.onerror = res; img.src = url; });
+  // Read buffer once — used for both TIFF decode and 8BIM parsing
+  let buf = null;
+  try { buf = await file.arrayBuffer(); } catch(e) {}
+  // If native load failed (e.g. TIFF in Chrome/Firefox), decode with UTIF
+  if (imgW === 0 && buf && typeof UTIF !== 'undefined') {
+    try {
+      const ifds = UTIF.decode(buf);
+      if (ifds.length > 0) {
+        UTIF.decodeImages(buf, ifds);
+        const rgba = UTIF.toRGBA8(ifds[0]);
+        imgW = ifds[0].width;
+        imgH = ifds[0].height;
+        const canvas = document.createElement('canvas');
+        canvas.width = imgW; canvas.height = imgH;
+        const ctx = canvas.getContext('2d');
+        const id = ctx.createImageData(imgW, imgH);
+        id.data.set(rgba);
+        ctx.putImageData(id, 0, 0);
+        URL.revokeObjectURL(url);
+        url = await new Promise(res => canvas.toBlob(b => res(URL.createObjectURL(b)), 'image/png'));
+      }
+    } catch(e) { console.warn('UTIF decode failed', e); }
+  }
   let clipInfo = null;
   try {
-    const buf = await file.arrayBuffer();
-    const ext = file.name.split('.').pop().toLowerCase();
-    const bimBuf = ['jpg','jpeg'].includes(ext) ? extractApp13(buf) : extractTiffPhotoshop(buf);
-    if (bimBuf) clipInfo = parse8BIM(bimBuf);
+    if (buf) {
+      const ext = file.name.split('.').pop().toLowerCase();
+      const bimBuf = ['jpg','jpeg'].includes(ext) ? extractApp13(buf) : extractTiffPhotoshop(buf);
+      if (bimBuf) clipInfo = parse8BIM(bimBuf);
+    }
   } catch(e) { console.warn('8BIM parse error', e); }
   loading.style.display = 'none';
   renderOutput(file, url, exifData, imgW, imgH, clipInfo);
