@@ -311,8 +311,15 @@ function renderOutput(file, url, data, imgW, imgH, clipInfo) {
   let html = '';
 
   // 1. Preview
-  html += `<div class="img-preview"><img src="${url}" alt="Preview">
-    <div class="img-caption">${file.name} &nbsp;·&nbsp; ${fmtBytes(file.size)} &nbsp;·&nbsp; ${imgW}×${imgH}px &nbsp;·&nbsp; ${mime}</div>
+  const previewImg = imgW > 0
+    ? `<img src="${url}" alt="Preview">`
+    : `<div style="display:flex;align-items:center;justify-content:center;gap:10px;padding:32px;color:var(--text3)">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+        <span style="font-size:12px;font-family:var(--mono)">Preview not available — ${ext} files cannot be rendered in this browser</span>
+      </div>`;
+  const dims = imgW > 0 ? `${imgW}×${imgH}px &nbsp;·&nbsp; ` : '';
+  html += `<div class="img-preview">${previewImg}
+    <div class="img-caption">${file.name} &nbsp;·&nbsp; ${fmtBytes(file.size)} &nbsp;·&nbsp; ${dims}${mime}</div>
   </div>`;
 
   // 2. File
