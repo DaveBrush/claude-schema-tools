@@ -211,6 +211,60 @@ function extractTiffPhotoshop(buffer) {
   return null;
 }
 
+function readTiffXmp(buf) {
+  try {
+    const u8 = new Uint8Array(buf);
+    if (u8.length < 8) return null;
+    const le = u8[0] === 0x49;
+    if (!le && u8[0] !== 0x4D) return null;
+    function r16(o) { return le ? (u8[o] | (u8[o+1]<<8)) : ((u8[o]<<8) | u8[o+1]); }
+    function r32(o) { return (le ? (u8[o]|(u8[o+1]<<8)|(u8[o+2]<<16)|(u8[o+3]<<24)) : ((u8[o]<<24)|(u8[o+1]<<16)|(u8[o+2]<<8)|u8[o+3])) >>> 0; }
+    if (r16(2) !== 42) return null;
+    const ifdOff = r32(4);
+    if (ifdOff + 2 > u8.length) return null;
+    const numEntries = r16(ifdOff);
+    const typeSizes = [0,1,1,2,4,8,1,1,2,4,8,4,8];
+    let off = ifdOff + 2;
+    for (let i = 0; i < numEntries && off + 12 <= u8.length; i++, off += 12) {
+      if (r16(off) !== 700) continue;
+      const typ = r16(off+2), cnt = r32(off+4);
+      const total = (typeSizes[typ]||1) * cnt;
+      const dataOff = total <= 4 ? off + 8 : r32(off+8);
+      if (dataOff + cnt > u8.length) return null;
+      return new TextDecoder('utf-8').decode(u8.subarray(dataOff, dataOff + cnt));
+    }
+    return null;
+  } catch(e) { return null; }
+}
+
+function parseXmpToRows(xmpStr) {
+  if (!xmpStr) return [];
+  try {
+    const NS_RDF = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
+    const doc = new DOMParser().parseFromString(xmpStr, 'application/xml');
+    if (doc.querySelector('parsererror')) return [];
+    const rows = [], seen = new Set();
+    for (const desc of doc.getElementsByTagNameNS(NS_RDF, 'Description')) {
+      for (const child of desc.children) {
+        const key = child.localName;
+        if (seen.has(key)) continue;
+        const alt = child.getElementsByTagNameNS(NS_RDF, 'Alt')[0];
+        if (alt) {
+          const lis = alt.getElementsByTagNameNS(NS_RDF, 'li');
+          let val = null;
+          for (const li of lis) { if (li.getAttribute('xml:lang') === 'x-default') { val = li.textContent.trim(); break; } }
+          if (!val && lis.length) val = lis[0].textContent.trim();
+          if (val) { rows.push([key, val]); seen.add(key); }
+        } else {
+          const val = child.textContent.trim();
+          if (val) { rows.push([key, val]); seen.add(key); }
+        }
+      }
+    }
+    return rows;
+  } catch(e) { return []; }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmtBytes(b) {
   if (b < 1024) return b + ' bytes';
@@ -323,19 +377,20 @@ async function processFile(file) {
       }
     } catch(e) { console.warn('UTIF decode failed', e); }
   }
-  let clipInfo = null;
+  let clipInfo = null, tiffXmpRows = [];
   try {
     if (buf) {
       const ext = file.name.split('.').pop().toLowerCase();
       const bimBuf = ['jpg','jpeg'].includes(ext) ? extractApp13(buf) : extractTiffPhotoshop(buf);
       if (bimBuf) clipInfo = parse8BIM(bimBuf);
+      if (['tif','tiff'].includes(ext)) tiffXmpRows = parseXmpToRows(readTiffXmp(buf));
     }
   } catch(e) { console.warn('8BIM parse error', e); }
   loading.style.display = 'none';
-  renderOutput(file, url, exifData, imgW, imgH, clipInfo);
+  renderOutput(file, url, exifData, imgW, imgH, clipInfo, tiffXmpRows);
 }
 
-function renderOutput(file, url, data, imgW, imgH, clipInfo) {
+function renderOutput(file, url, data, imgW, imgH, clipInfo, tiffXmpRows = []) {
   const ext = file.name.split('.').pop().toUpperCase();
   const mime = file.type || 'unknown';
   let html = '';
@@ -401,6 +456,8 @@ function renderOutput(file, url, data, imgW, imgH, clipInfo) {
     </div>`;
     // 4. Clipping Path
     html += clipHtml;
+    // XMP from direct TIFF tag 700 parsing (when exifr found nothing)
+    if (tiffXmpRows.length) html += makeSection('XMP', tiffXmpRows);
     output.innerHTML = html; attachReload(); return;
   }
 
@@ -480,10 +537,12 @@ function renderOutput(file, url, data, imgW, imgH, clipInfo) {
   const iptcRows = Object.entries(iptcGroup).map(([k,v]) => [k,v]);
   if (iptcRows.length) html += makeSection('IPTC', iptcRows);
 
-  // XMP
+  // XMP — merge exifr output with direct TIFF tag 700 parse (deduplicates by key)
   const xmpGroup = groups.xmp||groups.XMP||{};
   const xmpRows = Object.entries(xmpGroup).map(([k,v]) => [k,v]);
-  if (xmpRows.length) html += makeSection('XMP', xmpRows);
+  const xmpSeen = new Set(xmpRows.map(([k]) => k));
+  const mergedXmpRows = [...xmpRows, ...tiffXmpRows.filter(([k]) => !xmpSeen.has(k))];
+  if (mergedXmpRows.length) html += makeSection('XMP', mergedXmpRows);
 
   // MakerNotes
   const makerKeys = Object.keys(flat).filter(k => k.toLowerCase().includes('maker') || /^(Canon|Nikon|Sony|Fuji|Olympus|Panasonic|Apple|Samsung|Leica|Pentax)/.test(k));
