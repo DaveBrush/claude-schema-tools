@@ -90,8 +90,9 @@ The schema explorers add a resizable left module panel (XSD) or toolbar (JSON). 
 5. After render, `attachReload()` changes the drop zone to a compact `.drop-small` strip.
 
 **TIFF direct metadata parsing** (fallback for when exifr misses tags):
-- `readTiffDirectMeta(buffer)` — parses the TIFF IFD in one pass. Extracts tag 700 (XMP, passed to `parseXmpToRows`) and tag 33432 (Copyright, ASCII). Returns `{xmpRows, copyright}`. Handles little- and big-endian, standard TIFF only (magic 42).
+- `readTiffDirectMeta(buffer)` — parses the TIFF IFD in one pass. Extracts: tag 700 (XMP → `parseXmpToRows`), tag 33432 (Copyright, ASCII), structural tags 258/259/262/277/282/283/296/338 (BitsPerSample, Compression, PhotometricInterp, SamplesPerPixel, XResolution, YResolution, ResolutionUnit, ExtraSamples), and tag 34675 (ICC profile bytes → `parseIccHeader`). Returns `{xmpRows, copyright, structRows, iccRows}`. Handles little- and big-endian, standard TIFF only (magic 42). All four output fields are used as fallbacks when exifr's corresponding groups are empty.
 - `parseXmpToRows(xmpStr)` — parses raw XMP XML using `DOMParser`. Iterates `rdf:Description` children; resolves lang-alt (`rdf:Alt`/`rdf:li`) to their `x-default` string. Returns `[[key, value], …]` using the local name (namespace prefix stripped).
+- `parseIccHeader(u8)` — parses the 128-byte ICC profile binary header (big-endian). Extracts: device class, color space, PCS, rendering intent, ICC version, primary platform, creation date, profile size. Also walks the tag table to find the `desc`/`mluc` tag for a human-readable profile description (supports both ICC v2 ASCII `desc` and ICC v4 UTF-16BE `mluc` formats).
 
 **8BIM / Photoshop clipping path parsing** (custom, no library):
 - `extractApp13(buffer)` — scans JPEG for `0xFF 0xED` (APP13) segments, strips `Photoshop 3.0\0` headers, merges multiple segments.

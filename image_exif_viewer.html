@@ -225,7 +225,7 @@ function extractTiffPhotoshop(buffer) {
 }
 
 function readTiffDirectMeta(buf) {
-  const result = { xmpRows: [], copyright: null };
+  const result = { xmpRows: [], copyright: null, structRows: [], iccRows: [] };
   try {
     const u8 = new Uint8Array(buf);
     if (u8.length < 8) return result;
@@ -238,6 +238,9 @@ function readTiffDirectMeta(buf) {
     if (ifdOff + 2 > u8.length) return result;
     const numEntries = r16(ifdOff);
     const typeSizes = [0,1,1,2,4,8,1,1,2,4,8,4,8];
+    let bitsPerSample = null, compression = null, photometric = null;
+    let samplesPerPixel = null, extraSamples = null, xRes = null, yRes = null, resUnit = null;
+    let iccU8 = null;
     let off = ifdOff + 2;
     for (let i = 0; i < numEntries && off + 12 <= u8.length; i++, off += 12) {
       const tag = r16(off), typ = r16(off+2), cnt = r32(off+4);
@@ -247,10 +250,83 @@ function readTiffDirectMeta(buf) {
         result.xmpRows = parseXmpToRows(new TextDecoder('utf-8').decode(u8.subarray(dataOff, dataOff + cnt)));
       } else if (tag === 33432 && typ === 2 && dataOff + cnt <= u8.length) {
         result.copyright = new TextDecoder('latin1').decode(u8.subarray(dataOff, dataOff + cnt)).replace(/\0+$/, '').trim() || null;
-      }
+      } else if (tag === 258) {
+        bitsPerSample = Array.from({length: Math.min(cnt, 8)}, (_, j) => r16(dataOff + j*2));
+      } else if (tag === 259) { compression = r16(dataOff);
+      } else if (tag === 262) { photometric = r16(dataOff);
+      } else if (tag === 277) { samplesPerPixel = r16(dataOff);
+      } else if (tag === 282 && dataOff + 8 <= u8.length) { const n=r32(dataOff),d=r32(dataOff+4); xRes = d ? n/d : null;
+      } else if (tag === 283 && dataOff + 8 <= u8.length) { const n=r32(dataOff),d=r32(dataOff+4); yRes = d ? n/d : null;
+      } else if (tag === 296) { resUnit = r16(dataOff);
+      } else if (tag === 338) { extraSamples = Array.from({length: Math.min(cnt, 4)}, (_, j) => r16(dataOff + j*2));
+      } else if (tag === 34675 && dataOff + cnt <= u8.length) { iccU8 = u8.subarray(dataOff, dataOff + cnt); }
     }
+    const COMPRESSION = {1:'Uncompressed',5:'LZW',6:'JPEG (old)',7:'JPEG',8:'Deflate (ZIP)',32773:'PackBits',34892:'Lossy JPEG'};
+    const RES_UNIT = {1:'No absolute unit',2:'Inch',3:'Centimetre'};
+    const EXTRA = {0:'Unspecified',1:'Associated alpha (pre-multiplied)',2:'Unassociated alpha (straight)'};
+    const PHOTOMETRIC = {0:'WhiteIsZero',1:'BlackIsZero',2:'RGB',3:'Palette',4:'Transparency mask',5:'CMYK',6:'YCbCr',8:'CIELab'};
+    if (compression !== null) result.structRows.push(['Compression', COMPRESSION[compression]||`Type ${compression}`]);
+    if (samplesPerPixel !== null) result.structRows.push(['Samples per pixel', samplesPerPixel]);
+    if (bitsPerSample) result.structRows.push(['Bits per sample', bitsPerSample.join(', ')]);
+    if (photometric !== null) result.structRows.push(['Photometric interpretation', PHOTOMETRIC[photometric]||`Type ${photometric}`]);
+    if (extraSamples) result.structRows.push(['Extra samples', extraSamples.map(v => EXTRA[v]||`Type ${v}`).join(', ')]);
+    if (xRes !== null && yRes !== null) {
+      const ru = RES_UNIT[resUnit]||'';
+      result.structRows.push(['Resolution', xRes === yRes ? `${xRes} ${ru}`.trim() : `${xRes} × ${yRes} ${ru}`.trim()]);
+    }
+    if (iccU8 && iccU8.length >= 128) result.iccRows = parseIccHeader(iccU8);
   } catch(e) {}
   return result;
+}
+
+function parseIccHeader(u8) {
+  try {
+    function r16be(o) { return (u8[o]<<8)|u8[o+1]; }
+    function r32be(o) { return ((u8[o]<<24)|(u8[o+1]<<16)|(u8[o+2]<<8)|u8[o+3])>>>0; }
+    function str4(o) { return String.fromCharCode(u8[o],u8[o+1],u8[o+2],u8[o+3]).replace(/[^\x20-\x7E]/g,'').trim(); }
+    const CLASS = {scnr:'Scanner',mntr:'Display',prtr:'Printer',link:'Device link',spac:'Color space conversion',abst:'Abstract',nmcl:'Named color'};
+    const CS = {'XYZ ':'CIE XYZ','Lab ':'CIELAB','RGB ':'RGB','GRAY':'Grayscale','CMYK':'CMYK','YCbr':'YCbCr','CMY ':'CMY'};
+    const PLATFORM = {APPL:'Apple macOS',MSFT:'Microsoft Windows','SGI ':'SGI IRIX','SUNW':'Sun Solaris'};
+    const RI = ['Perceptual','Relative colorimetric','Saturation','Absolute colorimetric'];
+    const rows = [];
+    const deviceClass = str4(12), colorSpace = str4(16), pcs = str4(20), platform = str4(40);
+    const ri = r32be(64);
+    const yr=r16be(24),mo=r16be(26),dy=r16be(28),hr=r16be(30),mn=r16be(32),sc=r16be(34);
+    rows.push(['Color space', CS[colorSpace]||colorSpace]);
+    rows.push(['Device class', CLASS[deviceClass]||deviceClass]);
+    rows.push(['Profile connection space', CS[pcs]||pcs]);
+    rows.push(['Rendering intent', RI[ri]||`Type ${ri}`]);
+    rows.push(['ICC version', `${u8[8]}.${u8[9]>>4}.${u8[9]&0xF}`]);
+    if (platform) rows.push(['Primary platform', PLATFORM[platform]||platform]);
+    rows.push(['Profile size', `${r32be(0)} bytes`]);
+    rows.push(['Created', `${yr}-${String(mo).padStart(2,'0')}-${String(dy).padStart(2,'0')} ${String(hr).padStart(2,'0')}:${String(mn).padStart(2,'0')}:${String(sc).padStart(2,'0')}`]);
+    // Try to find profile description from tag table
+    if (u8.length >= 132) {
+      const tagCount = r32be(128);
+      for (let i = 0; i < tagCount && 132 + i*12 + 12 <= u8.length; i++) {
+        const sig = str4(132 + i*12);
+        if (sig !== 'desc') continue;
+        const tOff = r32be(132 + i*12 + 4);
+        if (tOff + 8 > u8.length) break;
+        const tSig = str4(tOff);
+        if (tSig === 'desc' && tOff + 12 <= u8.length) { // ICC v2
+          const len = r32be(tOff + 8);
+          if (len > 0 && tOff + 12 + len <= u8.length) {
+            const d = new TextDecoder('latin1').decode(u8.subarray(tOff+12, tOff+12+len)).replace(/\0+$/,'').trim();
+            if (d) rows.unshift(['Profile description', d]);
+          }
+        } else if (tSig === 'mluc' && tOff + 16 <= u8.length) { // ICC v4
+          const strLen = r32be(tOff + 20), strOff = r32be(tOff + 24);
+          if (tOff + strOff + strLen <= u8.length) {
+            const d = new TextDecoder('utf-16be').decode(u8.subarray(tOff+strOff, tOff+strOff+strLen)).trim();
+            if (d) rows.unshift(['Profile description', d]);
+          }
+        }
+        break;
+      }
+    }
+    return rows;
+  } catch(e) { return []; }
 }
 
 function parseXmpToRows(xmpStr) {
@@ -647,10 +723,11 @@ function buildOutputHtml(file, url, data, imgW, imgH, clipInfo, tiffDirectMeta =
   const exifRows = Object.entries(exifGroup).filter(([k]) => !['MakerNote','UserComment'].includes(k)).map(([k,v]) => [k,v]);
   if (exifRows.length) html += makeSection('EXIF', exifRows);
 
-  // TIFF
+  // TIFF — fall back to directly-read structural tags if exifr returned nothing
   const tiffGroup = groups.tiff||groups.ifd0||{};
   const tiffRows = Object.entries(tiffGroup).filter(([k]) => k !== 'Copyright').map(([k,v]) => [k,v]);
-  if (tiffRows.length) html += makeSection('TIFF / IFD0', tiffRows);
+  const effectiveTiffRows = tiffRows.length ? tiffRows : (tiffDirectMeta.structRows||[]);
+  if (effectiveTiffRows.length) html += makeSection('TIFF / IFD0', effectiveTiffRows);
 
   // IPTC
   const iptcGroup = groups.iptc||groups.IPTC||{};
@@ -668,10 +745,11 @@ function buildOutputHtml(file, url, data, imgW, imgH, clipInfo, tiffDirectMeta =
   const makerKeys = Object.keys(flat).filter(k => k.toLowerCase().includes('maker') || /^(Canon|Nikon|Sony|Fuji|Olympus|Panasonic|Apple|Samsung|Leica|Pentax)/.test(k));
   if (makerKeys.length) html += makeSection('MakerNotes', makerKeys.map(k => [k, flat[k]]));
 
-  // ICC
+  // ICC — fall back to directly-parsed ICC header if exifr returned nothing
   const iccGroup = groups.icc||groups.ICC||{};
   const iccRows = Object.entries(iccGroup).map(([k,v]) => [k,v]);
-  if (iccRows.length) html += makeSection('ICC Color Profile', iccRows);
+  const effectiveIccRows = iccRows.length ? iccRows : (tiffDirectMeta.iccRows||[]);
+  if (effectiveIccRows.length) html += makeSection('ICC Color Profile', effectiveIccRows);
 
   // Remaining
   const knownKeys = new Set([...Object.keys(exifGroup),...Object.keys(tiffGroup),...Object.keys(iptcGroup),...Object.keys(xmpGroup),...Object.keys(iccGroup),...Object.keys(gps),...makerKeys,'latitude','longitude','altitude']);
