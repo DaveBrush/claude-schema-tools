@@ -93,7 +93,19 @@ a.map-link:hover{text-decoration:underline}
 /* RELOAD STRIP */
 .drop-small{position:relative;display:flex;align-items:center;gap:8px;padding:10px 16px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;margin-bottom:10px;cursor:pointer;transition:background .1s}
 .drop-small:hover{background:var(--bg3)}
+.drop-small.drag-over{background:var(--bg3);border-color:rgba(232,121,168,.3)}
 .drop-small span{font-size:12px;color:var(--text2);font-family:var(--mono)}
+/* FILE NAV */
+.file-nav{display:flex;align-items:center;gap:6px;padding:0 0 8px;margin-bottom:2px}
+.fn-list{flex:1;display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;min-width:0;padding:2px 0}
+.fn-list::-webkit-scrollbar{display:none}
+.fn-chip{font-size:11px;font-family:var(--mono);padding:4px 10px;border-radius:6px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0;transition:background .12s,opacity .12s,color .12s}
+.fn-chip.active{background:rgba(232,121,168,.15);border-color:rgba(232,121,168,.3);color:var(--accent);font-weight:500}
+.fn-chip.pending{opacity:.4;cursor:default;pointer-events:none}
+.fn-btn{width:28px;height:28px;padding:0;border-radius:6px;font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.fn-btn:disabled{opacity:.3;pointer-events:none}
+.fn-sep{width:1px;height:16px;background:var(--border2);flex-shrink:0;margin:0 2px}
+.fn-count{font-size:11px;color:var(--text3);font-family:var(--mono);white-space:nowrap;flex-shrink:0}
 </style>
 </head>
 <body>
@@ -104,18 +116,19 @@ a.map-link:hover{text-decoration:underline}
     <div class="hdr-sub">EXIF · IPTC · XMP · GPS · ICC · Clipping Paths</div>
     <div class="hdr-r">
       <button class="theme-btn" id="themebtn" title="Toggle light/dark mode">🌙</button>
-      <button class="btn-p" onclick="document.getElementById('file-input').click()">↑ Load image</button>
-      <input type="file" id="file-input" accept="image/*,.tiff,.tif,.heic,.heif,.avif,.webp,.png,.jpg,.jpeg,.gif,.bmp,.cr2,.nef,.arw,.orf,.rw2,.dng,.psd,.eps">
+      <button class="btn-p" onclick="document.getElementById('file-input').click()">↑ Load images</button>
+      <input type="file" id="file-input" multiple accept="image/*,.tiff,.tif,.heic,.heif,.avif,.webp,.png,.jpg,.jpeg,.gif,.bmp,.cr2,.nef,.arw,.orf,.rw2,.dng,.psd,.eps">
     </div>
   </div>
   <div class="content">
     <div class="inner">
+      <div id="file-nav" style="display:none"></div>
       <div id="drop-zone" class="drop">
         <div class="drop-ring">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
         </div>
-        <h2>Drop an image here</h2>
-        <p>or click to select a file</p>
+        <h2>Drop images here</h2>
+        <p>or click to select — drop multiple files to batch-view</p>
         <div class="drop-hint">JPEG · TIFF · PNG · HEIC · WebP · PSD · RAW (CR2, NEF, ARW, DNG…)</div>
       </div>
       <div id="loading"><p>Parsing image metadata…</p><div class="prog"></div></div>
@@ -330,6 +343,7 @@ const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
 const output = document.getElementById('output');
 const loading = document.getElementById('loading');
+const fileNav = document.getElementById('file-nav');
 
 // Theme
 const THEME_KEY = 'schema-explorer-theme';
@@ -341,26 +355,102 @@ themebtn.addEventListener('click', () => {
   themebtn.textContent = light ? '☀️' : '🌙';
 });
 
-// Drop zone
-dropZone.onclick = () => { fileInput.value = ''; fileInput.click(); };
-dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
-dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('drag-over'); const f = e.dataTransfer.files[0]; if (f) processFile(f); });
-fileInput.addEventListener('change', e => { if (e.target.files[0]) processFile(e.target.files[0]); });
+// ── Multi-file state ──────────────────────────────────────────────────────────
+let fileList = [];
+let fileResults = [];   // null | { url, html }
+let currentIdx = 0;
+let processingChain = Promise.resolve();
 
-async function processFile(file) {
-  loading.style.display = 'block'; output.innerHTML = ''; dropZone.style.display = 'none';
+// ── Navigation bar ────────────────────────────────────────────────────────────
+function renderNavBar() {
+  if (fileList.length <= 1) { fileNav.style.display = 'none'; return; }
+  fileNav.className = 'file-nav';
+  fileNav.style.display = '';
+
+  const chips = fileList.map((f, i) => {
+    const done = !!fileResults[i];
+    const active = i === currentIdx;
+    const name = f.name.length > 26 ? f.name.slice(0, 24) + '…' : f.name;
+    const cls = ['fn-chip', active ? 'active' : '', !done ? 'pending' : ''].filter(Boolean).join(' ');
+    const click = done ? `onclick="navigateTo(${i})"` : '';
+    const title = `title="${f.name}${!done ? ' — processing…' : ''}"`;
+    return `<button class="${cls}" ${click} ${title}>${name}</button>`;
+  }).join('');
+
+  fileNav.innerHTML =
+    `<button class="fn-btn" onclick="navigateTo(${currentIdx - 1})"${currentIdx === 0 ? ' disabled' : ''}>‹</button>` +
+    `<div class="fn-list">${chips}</div>` +
+    `<button class="fn-btn" onclick="navigateTo(${currentIdx + 1})"${currentIdx >= fileList.length - 1 ? ' disabled' : ''}>›</button>` +
+    `<div class="fn-sep"></div>` +
+    `<span class="fn-count">${currentIdx + 1}&thinsp;/&thinsp;${fileList.length}</span>`;
+
+  requestAnimationFrame(() => {
+    const chip = fileNav.querySelector('.fn-chip.active');
+    if (chip) chip.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+  });
+}
+
+window.navigateTo = function(idx) {
+  if (idx < 0 || idx >= fileList.length || !fileResults[idx]) return;
+  currentIdx = idx;
+  renderNavBar();
+  showResult(idx);
+};
+
+function showResult(idx) {
+  const r = fileResults[idx];
+  if (!r) return;
+  output.innerHTML = r.html;
+  if (dropZone.className !== 'drop-small') attachReload();
+}
+
+// ── File enqueueing & processing ──────────────────────────────────────────────
+function enqueueFiles(files) {
+  const arr = Array.from(files);
+  if (!arr.length) return;
+  const wasEmpty = fileList.length === 0;
+
+  arr.forEach(file => {
+    const idx = fileList.length;
+    fileList.push(file);
+    fileResults.push(null);
+
+    processingChain = processingChain.then(async () => {
+      try {
+        const result = await doProcessFile(file);
+        fileResults[idx] = result;
+      } catch(err) {
+        console.error('Failed to process', file.name, err);
+        fileResults[idx] = {
+          url: null,
+          html: `<div class="box box-warn">Failed to process <strong>${file.name}</strong>: ${err.message || 'Unknown error'}</div>`
+        };
+      }
+      renderNavBar();
+      if (wasEmpty && idx === 0) {
+        loading.style.display = 'none';
+        showResult(0);
+      }
+    });
+  });
+
+  if (wasEmpty) {
+    loading.style.display = 'block';
+    output.innerHTML = '';
+    dropZone.style.display = 'none';
+  }
+  renderNavBar();
+}
+
+async function doProcessFile(file) {
   let url = URL.createObjectURL(file);
   let exifData = null, imgW = 0, imgH = 0;
   try {
     exifData = await exifr.parse(file, {tiff:true,exif:true,gps:true,iptc:true,xmp:true,icc:true,jfif:true,ihdr:true,makerNote:true,multiSegment:true,mergeOutput:false,translateValues:true,reviveValues:true,sanitize:true});
   } catch(e) { try { exifData = await exifr.parse(file); } catch {} }
-  // Try native browser image load
   await new Promise(res => { const img = new Image(); img.onload = () => { imgW = img.naturalWidth; imgH = img.naturalHeight; res(); }; img.onerror = res; img.src = url; });
-  // Read buffer once — used for both TIFF decode and 8BIM parsing
   let buf = null;
   try { buf = await file.arrayBuffer(); } catch(e) {}
-  // If native load failed (e.g. TIFF in Chrome/Firefox), decode with UTIF
   if (imgW === 0 && buf && typeof UTIF !== 'undefined') {
     try {
       const ifds = UTIF.decode(buf);
@@ -389,11 +479,35 @@ async function processFile(file) {
       if (['tif','tiff'].includes(ext)) tiffDirectMeta = readTiffDirectMeta(buf);
     }
   } catch(e) { console.warn('8BIM parse error', e); }
-  loading.style.display = 'none';
-  renderOutput(file, url, exifData, imgW, imgH, clipInfo, tiffDirectMeta);
+  const html = buildOutputHtml(file, url, exifData, imgW, imgH, clipInfo, tiffDirectMeta);
+  return { url, html };
 }
 
-function renderOutput(file, url, data, imgW, imgH, clipInfo, tiffDirectMeta = {}) {
+// ── Drop zone & input handlers ────────────────────────────────────────────────
+dropZone.onclick = () => { fileInput.value = ''; fileInput.click(); };
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+
+// Accept drops anywhere on the page (works even when drop zone is collapsed)
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  if (e.dataTransfer.files.length) enqueueFiles(e.dataTransfer.files);
+});
+
+fileInput.addEventListener('change', e => { if (e.target.files.length) enqueueFiles(e.target.files); });
+
+// Keyboard navigation between files
+document.addEventListener('keydown', e => {
+  if (fileList.length <= 1) return;
+  if (document.activeElement && ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+  if (e.key === 'ArrowLeft' && currentIdx > 0) { e.preventDefault(); navigateTo(currentIdx - 1); }
+  else if (e.key === 'ArrowRight' && currentIdx < fileList.length - 1) { e.preventDefault(); navigateTo(currentIdx + 1); }
+});
+
+// ── Output builder ────────────────────────────────────────────────────────────
+function buildOutputHtml(file, url, data, imgW, imgH, clipInfo, tiffDirectMeta = {}) {
   const tiffXmpRows = tiffDirectMeta.xmpRows || [];
   const tiffCopyright = tiffDirectMeta.copyright || null;
   const ext = file.name.split('.').pop().toUpperCase();
@@ -463,7 +577,7 @@ function renderOutput(file, url, data, imgW, imgH, clipInfo, tiffDirectMeta = {}
     html += clipHtml;
     // XMP from direct TIFF tag 700 parsing (when exifr found nothing)
     if (tiffXmpRows.length) html += makeSection('XMP', tiffXmpRows);
-    output.innerHTML = html; attachReload(); return;
+    return html;
   }
 
   const groups = data;
@@ -564,15 +678,15 @@ function renderOutput(file, url, data, imgW, imgH, clipInfo, tiffDirectMeta = {}
   const remainRows = Object.entries(flat).filter(([k]) => !knownKeys.has(k)).map(([k,v]) => [k,v]);
   if (remainRows.length) html += makeSection('Other / Composite', remainRows);
 
-  output.innerHTML = html;
-  attachReload();
+  return html;
 }
 
 function attachReload() {
   dropZone.style.display = '';
   dropZone.className = 'drop-small';
+  const label = fileList.length > 1 ? 'Drop or click to add more images' : 'Load another image';
   dropZone.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--text3);flex-shrink:0"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-    <span>Load another image</span>`;
+    <span>${label}</span>`;
   dropZone.onclick = () => { fileInput.value = ''; fileInput.click(); };
 }
 </script>

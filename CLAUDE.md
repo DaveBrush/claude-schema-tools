@@ -83,11 +83,15 @@ The schema explorers add a resizable left module panel (XSD) or toolbar (JSON). 
 **External dependencies**: `exifr@7.1.3` (EXIF/IPTC/XMP/GPS/ICC parsing) and `utif@2.0.1` (TIFF pixel decoding for browser preview), both from `cdn.jsdelivr.net/npm`.
 
 **Key data flow**:
-1. Drop zone / header button → `processFile(file)` — creates object URL, calls `exifr.parse()` with all group flags enabled, attempts native `<img>` load for dimensions. Reads raw `ArrayBuffer` once; if native load failed (e.g. TIFF in Chrome/Firefox), decodes with `UTIF.decodeImages()` and replaces the blob URL with a canvas-derived PNG blob.
-2. `renderOutput(file, url, data, imgW, imgH, clipInfo)` — builds the full HTML output. `data` is the `exifr` result object keyed by group (`exif`, `tiff`, `gps`, `iptc`, `xmp`, `icc`). A flat merge (`flat`) is also built for convenience.
+1. Drop zone / header button → `processFile(file)` — creates object URL, calls `exifr.parse()` with all group flags enabled, attempts native `<img>` load for dimensions. Reads raw `ArrayBuffer` once; if native load failed (e.g. TIFF in Chrome/Firefox), decodes with `UTIF.decodeImages()` and replaces the blob URL with a canvas-derived PNG blob. For TIFF files, also calls `readTiffDirectMeta(buf)` to extract tag 700 (XMP) and tag 33432 (Copyright) directly as a fallback when exifr misses them (common when the IFD is stored at the end of the file).
+2. `renderOutput(file, url, data, imgW, imgH, clipInfo, tiffDirectMeta)` — builds the full HTML output. `data` is the `exifr` result object keyed by group (`exif`, `tiff`, `gps`, `iptc`, `xmp`, `icc`). A flat merge (`flat`) is also built for convenience. `tiffDirectMeta` supplements exifr with `{xmpRows, copyright}` parsed directly from the TIFF IFD.
 3. Section order: image preview → File → Basic Image Information → Clipping Path → GPS → EXIF → TIFF/IFD0 → IPTC → XMP → MakerNotes → ICC → Other/Composite.
 4. `makeSection(title, rows)` — collapsible `.sec` card. `fmtVal(v)` renders values: objects with all-primitive properties show as `key: value` line pairs (handles XMP lang-alt); newlines in strings/values render as `<br>`.
 5. After render, `attachReload()` changes the drop zone to a compact `.drop-small` strip.
+
+**TIFF direct metadata parsing** (fallback for when exifr misses tags):
+- `readTiffDirectMeta(buffer)` — parses the TIFF IFD in one pass. Extracts tag 700 (XMP, passed to `parseXmpToRows`) and tag 33432 (Copyright, ASCII). Returns `{xmpRows, copyright}`. Handles little- and big-endian, standard TIFF only (magic 42).
+- `parseXmpToRows(xmpStr)` — parses raw XMP XML using `DOMParser`. Iterates `rdf:Description` children; resolves lang-alt (`rdf:Alt`/`rdf:li`) to their `x-default` string. Returns `[[key, value], …]` using the local name (namespace prefix stripped).
 
 **8BIM / Photoshop clipping path parsing** (custom, no library):
 - `extractApp13(buffer)` — scans JPEG for `0xFF 0xED` (APP13) segments, strips `Photoshop 3.0\0` headers, merges multiple segments.
