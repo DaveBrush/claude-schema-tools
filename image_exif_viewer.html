@@ -211,30 +211,33 @@ function extractTiffPhotoshop(buffer) {
   return null;
 }
 
-function readTiffXmp(buf) {
+function readTiffDirectMeta(buf) {
+  const result = { xmpRows: [], copyright: null };
   try {
     const u8 = new Uint8Array(buf);
-    if (u8.length < 8) return null;
+    if (u8.length < 8) return result;
     const le = u8[0] === 0x49;
-    if (!le && u8[0] !== 0x4D) return null;
-    function r16(o) { return le ? (u8[o] | (u8[o+1]<<8)) : ((u8[o]<<8) | u8[o+1]); }
+    if (!le && u8[0] !== 0x4D) return result;
+    function r16(o) { return le ? (u8[o]|(u8[o+1]<<8)) : ((u8[o]<<8)|u8[o+1]); }
     function r32(o) { return (le ? (u8[o]|(u8[o+1]<<8)|(u8[o+2]<<16)|(u8[o+3]<<24)) : ((u8[o]<<24)|(u8[o+1]<<16)|(u8[o+2]<<8)|u8[o+3])) >>> 0; }
-    if (r16(2) !== 42) return null;
+    if (r16(2) !== 42) return result;
     const ifdOff = r32(4);
-    if (ifdOff + 2 > u8.length) return null;
+    if (ifdOff + 2 > u8.length) return result;
     const numEntries = r16(ifdOff);
     const typeSizes = [0,1,1,2,4,8,1,1,2,4,8,4,8];
     let off = ifdOff + 2;
     for (let i = 0; i < numEntries && off + 12 <= u8.length; i++, off += 12) {
-      if (r16(off) !== 700) continue;
-      const typ = r16(off+2), cnt = r32(off+4);
+      const tag = r16(off), typ = r16(off+2), cnt = r32(off+4);
       const total = (typeSizes[typ]||1) * cnt;
       const dataOff = total <= 4 ? off + 8 : r32(off+8);
-      if (dataOff + cnt > u8.length) return null;
-      return new TextDecoder('utf-8').decode(u8.subarray(dataOff, dataOff + cnt));
+      if (tag === 700 && dataOff + cnt <= u8.length) {
+        result.xmpRows = parseXmpToRows(new TextDecoder('utf-8').decode(u8.subarray(dataOff, dataOff + cnt)));
+      } else if (tag === 33432 && typ === 2 && dataOff + cnt <= u8.length) {
+        result.copyright = new TextDecoder('latin1').decode(u8.subarray(dataOff, dataOff + cnt)).replace(/\0+$/, '').trim() || null;
+      }
     }
-    return null;
-  } catch(e) { return null; }
+  } catch(e) {}
+  return result;
 }
 
 function parseXmpToRows(xmpStr) {
@@ -377,20 +380,22 @@ async function processFile(file) {
       }
     } catch(e) { console.warn('UTIF decode failed', e); }
   }
-  let clipInfo = null, tiffXmpRows = [];
+  let clipInfo = null, tiffDirectMeta = { xmpRows: [], copyright: null };
   try {
     if (buf) {
       const ext = file.name.split('.').pop().toLowerCase();
       const bimBuf = ['jpg','jpeg'].includes(ext) ? extractApp13(buf) : extractTiffPhotoshop(buf);
       if (bimBuf) clipInfo = parse8BIM(bimBuf);
-      if (['tif','tiff'].includes(ext)) tiffXmpRows = parseXmpToRows(readTiffXmp(buf));
+      if (['tif','tiff'].includes(ext)) tiffDirectMeta = readTiffDirectMeta(buf);
     }
   } catch(e) { console.warn('8BIM parse error', e); }
   loading.style.display = 'none';
-  renderOutput(file, url, exifData, imgW, imgH, clipInfo, tiffXmpRows);
+  renderOutput(file, url, exifData, imgW, imgH, clipInfo, tiffDirectMeta);
 }
 
-function renderOutput(file, url, data, imgW, imgH, clipInfo, tiffXmpRows = []) {
+function renderOutput(file, url, data, imgW, imgH, clipInfo, tiffDirectMeta = {}) {
+  const tiffXmpRows = tiffDirectMeta.xmpRows || [];
+  const tiffCopyright = tiffDirectMeta.copyright || null;
   const ext = file.name.split('.').pop().toUpperCase();
   const mime = file.type || 'unknown';
   let html = '';
@@ -491,7 +496,8 @@ function renderOutput(file, url, data, imgW, imgH, clipInfo, tiffXmpRows = []) {
   if (flat.ColorSpace) basicRows.push(['Color Space', flat.ColorSpace]);
   if (flat.Software) basicRows.push(['Software', flat.Software]);
   if (flat.Artist) basicRows.push(['Artist', flat.Artist]);
-  if (flat.Copyright) basicRows.push(['Copyright', nlToBr(flat.Copyright)]);
+  const copyright = flat.Copyright || tiffCopyright;
+  if (copyright) basicRows.push(['Copyright', nlToBr(copyright)]);
 
   const warnings = flat.ColorSpace==='sRGB' && !flat.ICC
     ? `<div class="box box-warn">⚠ Color space tagged as sRGB but no embedded ICC color profile found.</div>` : '';
