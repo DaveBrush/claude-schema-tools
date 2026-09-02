@@ -427,6 +427,7 @@ function makeEnum(ctx, values, nameHint, description, pointer){
 }
 function ensureUniqueMemberName(rec, name){
   let base=name, i=2, nm=name;
+  if(nm===rec.name) nm = base = name+'Property'; // C# forbids a member sharing its enclosing type's name
   const used = rec.__usedMemberNames || (rec.__usedMemberNames=new Set());
   while(used.has(nm)) nm = base+(i++);
   used.add(nm);
@@ -644,18 +645,18 @@ function renderUnion(ctx, rec, indent){
   rec.alternatives.forEach(a=>{ out += `${indent}    public static implicit operator ${rec.name}(${renderTypeRef(a.type)} ${a.fieldName}) => new ${rec.name} { ${a.fieldName} = ${a.fieldName} };\n`; });
   out += `${indent}}\n\n`;
   out += `${indent}internal class ${rec.name}Converter : JsonConverter\n${indent}{\n`;
-  out += `${indent}    public override bool CanConvert(Type t) => t == typeof(${rec.name}) || t == typeof(${rec.name}?);\n\n`;
-  out += `${indent}    public override object ReadJson(JsonReader reader, Type t, object existingValue, JsonSerializer serializer)\n${indent}    {\n${indent}        switch (reader.TokenType)\n${indent}        {\n`;
+  out += `${indent}    public override bool CanConvert(System.Type t) => t == typeof(${rec.name}) || t == typeof(${rec.name}?);\n\n`;
+  out += `${indent}    public override object ReadJson(JsonReader reader, System.Type t, object existingValue, JsonSerializer serializer)\n${indent}    {\n${indent}        switch (reader.TokenType)\n${indent}        {\n`;
   rec.alternatives.forEach(a=>{
     tokenCasesFor(a.type).forEach(tc=> out += `${indent}            case ${tc}:\n`);
     out += `${indent}                return new ${rec.name} { ${a.fieldName} = serializer.Deserialize<${renderTypeRef(a.type)}>(reader) };\n`;
   });
-  out += `${indent}        }\n${indent}        throw new Exception("Cannot unmarshal type ${rec.name}");\n${indent}    }\n\n`;
+  out += `${indent}        }\n${indent}        throw new System.Exception("Cannot unmarshal type ${rec.name}");\n${indent}    }\n\n`;
   out += `${indent}    public override void WriteJson(JsonWriter writer, object untypedValue, JsonSerializer serializer)\n${indent}    {\n${indent}        var value = (${rec.name})untypedValue;\n`;
   rec.alternatives.forEach(a=>{
     out += `${indent}        if (value.${a.fieldName}${isValueType(a.type)?'.HasValue':' != null'})\n${indent}        {\n${indent}            serializer.Serialize(writer, value.${a.fieldName});\n${indent}            return;\n${indent}        }\n`;
   });
-  out += `${indent}        throw new Exception("Cannot marshal type ${rec.name}");\n${indent}    }\n`;
+  out += `${indent}        throw new System.Exception("Cannot marshal type ${rec.name}");\n${indent}    }\n`;
   out += `${indent}}\n`;
   return out;
 }
@@ -664,8 +665,8 @@ function renderConverterStubs(ctx, indent){
   const names = [...ctx.neededStringConverters.entries()].sort((a,b)=>a[0].localeCompare(b[0]));
   for(const [name, info] of names){
     out += `${indent}internal class ${name} : JsonConverter\n${indent}{\n`;
-    out += `${indent}    public override bool CanConvert(Type t) => t == typeof(string);\n\n`;
-    out += `${indent}    public override object ReadJson(JsonReader reader, Type t, object existingValue, JsonSerializer serializer)\n${indent}    {\n`;
+    out += `${indent}    public override bool CanConvert(System.Type t) => t == typeof(string);\n\n`;
+    out += `${indent}    public override object ReadJson(JsonReader reader, System.Type t, object existingValue, JsonSerializer serializer)\n${indent}    {\n`;
     out += `${indent}        var value = serializer.Deserialize<string>(reader);\n`;
     out += `${indent}        if (value == null || value.Length <= ${info.length}) return value;\n`;
     out += `${indent}        throw new JsonSerializationException("String exceeds max length of ${info.length} characters.");\n${indent}    }\n\n`;
@@ -677,8 +678,8 @@ function renderConverterStubs(ctx, indent){
   }
   if(ctx.neededValueConverter){
     out += `${indent}internal class MinMaxValueCheckConverter : JsonConverter\n${indent}{\n`;
-    out += `${indent}    public override bool CanConvert(Type t) => t == typeof(decimal) || t == typeof(decimal?) || t == typeof(double) || t == typeof(double?) || t == typeof(long) || t == typeof(long?) || t == typeof(int) || t == typeof(int?);\n\n`;
-    out += `${indent}    public override object ReadJson(JsonReader reader, Type t, object existingValue, JsonSerializer serializer) => serializer.Deserialize(reader, Nullable.GetUnderlyingType(t) ?? t);\n\n`;
+    out += `${indent}    public override bool CanConvert(System.Type t) => t == typeof(decimal) || t == typeof(decimal?) || t == typeof(double) || t == typeof(double?) || t == typeof(long) || t == typeof(long?) || t == typeof(int) || t == typeof(int?);\n\n`;
+    out += `${indent}    public override object ReadJson(JsonReader reader, System.Type t, object existingValue, JsonSerializer serializer) => serializer.Deserialize(reader, System.Nullable.GetUnderlyingType(t) ?? t);\n\n`;
     out += `${indent}    public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer) => serializer.Serialize(writer, value);\n`;
     out += `${indent}}\n\n`;
   }
