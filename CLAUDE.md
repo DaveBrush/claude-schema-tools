@@ -122,6 +122,8 @@ Converts a dropped JSON Schema (draft 2019-09/2020-12 style, `$defs`/`$ref`) int
 
 **Known simplification**: unions inside a union alternative that are themselves arrays (e.g. a recursive "any JSON value" schema with an array-of-self branch) are not modeled as a struct — `tryBuildUnion` returns `null` for any array alternative and the property falls back to `object`, surfaced as a warning rather than silently dropped.
 
+**Class name overrides**: a textarea (`#optRenames`, one `GeneratedName -> DesiredName` line per rule, parsed by `parseRenameOverrides`) lets the user rename specific classes/enums/structs post-generation — e.g. GDSN's `Measurement` colliding with a name they already use elsewhere, or un-collapsing a merged class's arbitrary canonical name (`Description2500` → `Description`). `applyRenameOverrides(ctx, overrides)` runs after `generate()`/merging, matching by the record's *current* name, renaming in place (mutating `rec.name`, not touching `.mergedInto` chains — so `renderTypeRef`'s `follow()` picks up the new name automatically everywhere the type is referenced) and pushing a warning instead of applying a rename that would collide with another live record's name. If the root record itself is renamed, `regenerate()` re-reads `meta.rootRecordName` from the registry afterward so the `FromJson`/`ToJson` helper uses the new name. Persisted to `localStorage` (`json-csharp-converter-renames`, independent of the schema-explorer theme key) since the same schema is typically re-converted repeatedly as it evolves and the same renames apply each time.
+
 ## Known issues / areas to improve
 
 **JSON explorer**

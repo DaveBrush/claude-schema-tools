@@ -69,6 +69,10 @@ pre#code{margin:0;padding:16px 20px 40px;font-family:var(--mono);font-size:12.5p
 .field input[type=text]{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-family:var(--mono);font-size:12px;padding:7px 10px;outline:none}
 .field input[type=text]:focus{border-color:var(--accent)}
 .field select{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-family:var(--sans);font-size:12px;padding:7px 10px;outline:none;cursor:pointer}
+.field textarea{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-family:var(--mono);font-size:11.5px;padding:8px 10px;outline:none;resize:vertical;line-height:1.6}
+.field textarea:focus{border-color:var(--accent)}
+.field textarea::placeholder{color:var(--text3)}
+.opt-sec code{font-family:var(--mono);background:var(--bg4);border-radius:3px;padding:0 3px}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .chk{display:flex;align-items:flex-start;gap:8px;cursor:pointer;padding:2px 0}
 .chk input{margin-top:2.5px;accent-color:var(--accent);flex-shrink:0}
@@ -165,6 +169,13 @@ input[type=file]{display:none}
         <label class="chk"><input type="checkbox" id="optMerge" checked><span class="chk-txt"><b>Merge structurally identical classes</b><span class="chk-hint">Collapses $defs that produce the same members into one class</span></span></label>
         <label class="chk"><input type="checkbox" id="optUnions" checked><span class="chk-txt"><b>Model real oneOf/anyOf as tagged structs</b><span class="chk-hint">Generates a struct + JsonConverter, like quicktype's union types (Newtonsoft only)</span></span></label>
         <label class="chk"><input type="checkbox" id="optHelper" checked><span class="chk-txt"><b>Include FromJson/ToJson helper</b><span class="chk-hint">Adds a small serialization helper on the root class</span></span></label>
+      </div>
+      <div class="opt-sec">
+        <div class="opt-lbl">Class name overrides</div>
+        <div class="field">
+          <textarea id="optRenames" rows="6" placeholder="Measurement -> MeasurementInfo&#10;Description2500 -> Description"></textarea>
+          <span class="chk-hint" style="display:block;margin-top:6px">One per line: <code>GeneratedName -&gt; DesiredName</code>. Matches the class/enum/struct name as currently generated (after merging). Saved in this browser and reapplied on every load.</span>
+        </div>
       </div>
       <div class="footer-note" id="hintNote">Load a schema, then tune these options — the code regenerates instantly.</div>
     </div>
@@ -712,13 +723,49 @@ const fi=document.getElementById('fi'), dz=document.getElementById('dz'), result
       warnChip=document.getElementById('warnChip'), warnList=document.getElementById('warnList'), warnItems=document.getElementById('warnItems'),
       resetBtn=document.getElementById('resetBtn'), hintNote=document.getElementById('hintNote');
 
-const optIds = ['optRootName','optNamespace','optLibrary','optIntType','optNumberType','optSortProps','optXmlDocs','optMerge','optUnions','optHelper'];
+const optIds = ['optRootName','optNamespace','optLibrary','optIntType','optNumberType','optSortProps','optXmlDocs','optMerge','optUnions','optHelper','optRenames'];
 optIds.forEach(id=>{
   const el = document.getElementById(id);
-  const evt = (el.type==='text') ? 'input' : 'change';
+  const isTyped = el.type==='text' || el.tagName==='TEXTAREA';
+  const evt = isTyped ? 'input' : 'change';
   let t=null;
-  el.addEventListener(evt, ()=>{ clearTimeout(t); t=setTimeout(regenerate, el.type==='text'?250:0); });
+  el.addEventListener(evt, ()=>{ clearTimeout(t); t=setTimeout(regenerate, isTyped?250:0); });
 });
+
+const RENAMES_KEY = 'json-csharp-converter-renames';
+const renamesEl = document.getElementById('optRenames');
+renamesEl.value = localStorage.getItem(RENAMES_KEY) || '';
+renamesEl.addEventListener('input', ()=>localStorage.setItem(RENAMES_KEY, renamesEl.value));
+
+function parseRenameOverrides(text){
+  const map = new Map();
+  String(text||'').split(/\r?\n/).forEach(line=>{
+    line = line.trim();
+    if(!line || line.startsWith('#') || line.startsWith('//')) return;
+    const m = line.match(/^(.+?)\s*(?:->|=>|=)\s*(.+)$/);
+    if(!m) return;
+    const from = m[1].trim(), to = m[2].trim();
+    if(from && to) map.set(from, to);
+  });
+  return map;
+}
+function applyRenameOverrides(ctx, overrides){
+  if(!overrides.size) return;
+  const live = ctx.allRecords.filter(r=>!r.mergedInto);
+  const byName = new Map(live.map(r=>[r.name, r]));
+  for(const [from, to] of overrides){
+    const rec = byName.get(from);
+    if(!rec || to===rec.name) continue;
+    const existing = byName.get(to);
+    if(existing && existing!==rec){
+      warn(ctx, `Rename "${from}" → "${to}" skipped: "${to}" is already used by another generated type.`);
+      continue;
+    }
+    byName.delete(from);
+    rec.name = to;
+    byName.set(to, rec);
+  }
+}
 
 function readOptions(){
   return {
@@ -747,9 +794,12 @@ function regenerate(){
   if(!lastSchema) return;
   const options = readOptions();
   const ctx = makeCtx(options);
+  const overrides = parseRenameOverrides(renamesEl.value);
   let meta, code, errorMsg=null;
   try{
     meta = generate(ctx, lastSchema, options);
+    applyRenameOverrides(ctx, overrides);
+    if(!meta.rootIsArray) meta.rootRecordName = ctx.registryByPointer.get('__root__').name;
     code = renderAll(ctx, meta, lastFileName);
   } catch(e){
     errorMsg = e && e.message ? e.message : String(e);
