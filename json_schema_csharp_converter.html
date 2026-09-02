@@ -164,7 +164,6 @@ input[type=file]{display:none}
         <label class="chk"><input type="checkbox" id="optXmlDocs" checked><span class="chk-txt"><b>XML doc comments</b><span class="chk-hint">Copies schema "description"/"title" into /// summaries</span></span></label>
         <label class="chk"><input type="checkbox" id="optMerge" checked><span class="chk-txt"><b>Merge structurally identical classes</b><span class="chk-hint">Collapses $defs that produce the same members into one class</span></span></label>
         <label class="chk"><input type="checkbox" id="optUnions" checked><span class="chk-txt"><b>Model real oneOf/anyOf as tagged structs</b><span class="chk-hint">Generates a struct + JsonConverter, like quicktype's union types (Newtonsoft only)</span></span></label>
-        <label class="chk"><input type="checkbox" id="optConverters" checked><span class="chk-txt"><b>Emit length/range validation converters</b><span class="chk-hint">Adds [JsonConverter(typeof(String200MinMaxLengthCheckConverter))] etc. for maxLength/minimum/maximum, plus working stub classes (Newtonsoft only)</span></span></label>
         <label class="chk"><input type="checkbox" id="optHelper" checked><span class="chk-txt"><b>Include FromJson/ToJson helper</b><span class="chk-hint">Adds a small serialization helper on the root class</span></span></label>
       </div>
       <div class="footer-note" id="hintNote">Load a schema, then tune these options — the code regenerates instantly.</div>
@@ -175,8 +174,7 @@ input[type=file]{display:none}
 /* ============================== Generator core ============================== */
 function makeCtx(options){
   return { options, schemaRoot:null, allRecords:[], registryByPointer:new Map(), usedNames:new Map(),
-    warnings:[], neededStringConverters:new Map(), neededValueConverter:false, inlineCounter:0, unionCounter:0,
-    needsEnumMemberUsing:false };
+    warnings:[], inlineCounter:0, unionCounter:0, needsEnumMemberUsing:false };
 }
 function splitWords(name){
   let s = String(name||'').trim();
@@ -372,11 +370,7 @@ function resolveRefType(ctx, ref, nameHint){
   }
   const defName = ref.replace(/^#\//,'').split('/').pop().replace(/~1/g,'/').replace(/~0/g,'~');
 
-  if(isPrimitiveLeaf(target)){
-    const r = resolveSchemaType(ctx, target, defName);
-    r.constraints = {...r.constraints, __defName: defName};
-    return r;
-  }
+  if(isPrimitiveLeaf(target)) return resolveSchemaType(ctx, target, defName);
   if(target.$ref) return resolveRefType(ctx, target.$ref, nameHint);
   if(target.enum && (!target.type || target.type==='string')){
     const rec = makeEnum(ctx, target.enum, defName, target.description, ref);
@@ -433,24 +427,6 @@ function ensureUniqueMemberName(rec, name){
   used.add(nm);
   return nm;
 }
-function pickConverterAttr(ctx, res){
-  if(!ctx.options.emitConverters || ctx.options.library!=='newtonsoft') return null;
-  const c = res.constraints||{};
-  const t = res.type;
-  if(t.k!=='prim') return null;
-  if(t.t==='string' && c.maxLength!=null){
-    const isCodeList = c.__defName && c.__defName.toLowerCase()==='codelist';
-    const prefix = isCodeList ? 'CodeList' : 'String';
-    const name = `${prefix}${c.maxLength}MinMaxLengthCheckConverter`;
-    ctx.neededStringConverters.set(name, {prefix, length: c.maxLength});
-    return name;
-  }
-  if((t.t==='decimal'||t.t==='double'||t.t==='long'||t.t==='int') && (c.minimum!=null || c.maximum!=null)){
-    ctx.neededValueConverter = true;
-    return 'MinMaxValueCheckConverter';
-  }
-  return null;
-}
 function populateClassMembers(ctx, rec, rawSchema){
   const schema = mergeAllOfIfNeeded(ctx, rawSchema);
   const props = schema.properties || {};
@@ -460,7 +436,6 @@ function populateClassMembers(ctx, rec, rawSchema){
   for(const key of keys){
     const propSchema = props[key];
     const res = resolveSchemaType(ctx, propSchema, key);
-    const converterAttr = pickConverterAttr(ctx, res);
     rec.members.push({
       jsonName: key,
       csName: ensureUniqueMemberName(rec, toPascalCase(key)),
@@ -468,7 +443,6 @@ function populateClassMembers(ctx, rec, rawSchema){
       required: required.has(key),
       forceNullable: !!res.forceNullable,
       description: propSchema && typeof propSchema==='object' ? propSchema.description : undefined,
-      converterAttr,
     });
   }
 }
@@ -517,7 +491,7 @@ function runStructuralMerge(ctx){
       if(rec.mergedInto || rec.isRoot) continue;
       let sig;
       if(rec.kind==='class'){
-        sig = 'C|'+rec.members.map(m=>`${m.jsonName}#${m.required}#${m.forceNullable}#${signatureOfType(m.type)}#${m.converterAttr||''}`).join(';');
+        sig = 'C|'+rec.members.map(m=>`${m.jsonName}#${m.required}#${m.forceNullable}#${signatureOfType(m.type)}`).join(';');
       } else if(rec.kind==='enum'){
         sig = 'E|'+rec.values.map(v=>v.raw).slice().sort().join(',');
       } else continue;
@@ -584,7 +558,6 @@ function renderMember(ctx, m, indent){
     out.push(`${indent}[JsonPropertyName("${m.jsonName}")]`);
     if(!m.required) out.push(`${indent}[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]`);
   }
-  if(m.converterAttr) out.push(`${indent}[JsonConverter(typeof(${m.converterAttr}))]`);
   const bareType = renderTypeRef(m.type);
   const nullable = (isValueType(m.type) && !m.required) || m.forceNullable;
   const typeStr = bareType + (nullable && isValueType(m.type) ? '?' : '');
@@ -660,31 +633,6 @@ function renderUnion(ctx, rec, indent){
   out += `${indent}}\n`;
   return out;
 }
-function renderConverterStubs(ctx, indent){
-  let out = '';
-  const names = [...ctx.neededStringConverters.entries()].sort((a,b)=>a[0].localeCompare(b[0]));
-  for(const [name, info] of names){
-    out += `${indent}internal class ${name} : JsonConverter\n${indent}{\n`;
-    out += `${indent}    public override bool CanConvert(System.Type t) => t == typeof(string);\n\n`;
-    out += `${indent}    public override object ReadJson(JsonReader reader, System.Type t, object existingValue, JsonSerializer serializer)\n${indent}    {\n`;
-    out += `${indent}        var value = serializer.Deserialize<string>(reader);\n`;
-    out += `${indent}        if (value == null || value.Length <= ${info.length}) return value;\n`;
-    out += `${indent}        throw new JsonSerializationException("String exceeds max length of ${info.length} characters.");\n${indent}    }\n\n`;
-    out += `${indent}    public override void WriteJson(JsonWriter writer, object untypedValue, JsonSerializer serializer)\n${indent}    {\n`;
-    out += `${indent}        var value = (string)untypedValue;\n`;
-    out += `${indent}        if (value == null || value.Length <= ${info.length}) { serializer.Serialize(writer, value); return; }\n`;
-    out += `${indent}        throw new JsonSerializationException("String exceeds max length of ${info.length} characters.");\n${indent}    }\n`;
-    out += `${indent}}\n\n`;
-  }
-  if(ctx.neededValueConverter){
-    out += `${indent}internal class MinMaxValueCheckConverter : JsonConverter\n${indent}{\n`;
-    out += `${indent}    public override bool CanConvert(System.Type t) => t == typeof(decimal) || t == typeof(decimal?) || t == typeof(double) || t == typeof(double?) || t == typeof(long) || t == typeof(long?) || t == typeof(int) || t == typeof(int?);\n\n`;
-    out += `${indent}    public override object ReadJson(JsonReader reader, System.Type t, object existingValue, JsonSerializer serializer) => serializer.Deserialize(reader, System.Nullable.GetUnderlyingType(t) ?? t);\n\n`;
-    out += `${indent}    public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer) => serializer.Serialize(writer, value);\n`;
-    out += `${indent}}\n\n`;
-  }
-  return out;
-}
 function renderHelper(ctx, rootRecordName, indent){
   const opt = ctx.options;
   let out = '';
@@ -734,7 +682,6 @@ function renderAll(ctx, meta, sourceLabel){
     out += '\n';
   }
   if(opt.includeHelper && meta.rootRecordName){ out += renderHelper(ctx, meta.rootRecordName, indent); out += '\n'; }
-  if(opt.emitConverters && opt.library==='newtonsoft') out += renderConverterStubs(ctx, indent);
   out = out.replace(/\n{3,}/g,'\n\n');
   out += `}\n`;
   return out;
@@ -765,7 +712,7 @@ const fi=document.getElementById('fi'), dz=document.getElementById('dz'), result
       warnChip=document.getElementById('warnChip'), warnList=document.getElementById('warnList'), warnItems=document.getElementById('warnItems'),
       resetBtn=document.getElementById('resetBtn'), hintNote=document.getElementById('hintNote');
 
-const optIds = ['optRootName','optNamespace','optLibrary','optIntType','optNumberType','optSortProps','optXmlDocs','optMerge','optUnions','optConverters','optHelper'];
+const optIds = ['optRootName','optNamespace','optLibrary','optIntType','optNumberType','optSortProps','optXmlDocs','optMerge','optUnions','optHelper'];
 optIds.forEach(id=>{
   const el = document.getElementById(id);
   const evt = (el.type==='text') ? 'input' : 'change';
@@ -784,7 +731,6 @@ function readOptions(){
     xmlDocs: document.getElementById('optXmlDocs').checked,
     mergeStructural: document.getElementById('optMerge').checked,
     emitUnions: document.getElementById('optUnions').checked,
-    emitConverters: document.getElementById('optConverters').checked,
     includeHelper: document.getElementById('optHelper').checked,
   };
 }
