@@ -4,11 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-Three standalone browser tools. Open any file directly in a browser; no build step, no server, no npm.
+Four standalone browser tools. Open any file directly in a browser; no build step, no server, no npm.
 
 - [json_schema_explorer.html](json_schema_explorer.html) — JSON Schema viewer (zero-dependency, fully self-contained)
 - [xsd_schema_explorer.html](xsd_schema_explorer.html) — XSD / GDSN catalogue schema viewer (zero-dependency, fully self-contained)
 - [image_exif_viewer.html](image_exif_viewer.html) — Image metadata viewer: EXIF, IPTC, XMP, GPS, ICC, Photoshop clipping paths. Loads `exifr@7.1.3` and `utif@2.0.1` from jsDelivr CDN — requires an internet connection.
+- [json_schema_csharp_converter.html](json_schema_csharp_converter.html) — JSON Schema → C# POCO class generator (zero-dependency, fully self-contained)
 
 ## Running the tools
 
@@ -16,17 +17,17 @@ Open any file directly in a browser (`File → Open`, or drag onto a browser tab
 
 ## Architecture
 
-### Shared design conventions (all three tools)
+### Shared design conventions (all four tools)
 
-All three tools share the same CSS custom-property theme system. Dark mode is the default; `html.light` on the root element switches to light. Theme preference is saved to `localStorage` under the key `schema-explorer-theme` — all files share this key so they stay in sync.
+All four tools share the same CSS custom-property theme system. Dark mode is the default; `html.light` on the root element switches to light. Theme preference is saved to `localStorage` under the key `schema-explorer-theme` — all files share this key so they stay in sync.
 
 Font pair: **JetBrains Mono** (code/mono) and **Outfit** (UI), loaded from Google Fonts via a single `<link>` at the top of each file.
 
 CSS variables define the full colour palette (`--bg` through `--bg5`, `--text` through `--text3`, named semantic colours). All component styles consume these variables; never hard-code colours.
 
-Each tool has its own accent colour: JSON explorer = `--accent` blue, XSD explorer = `--teal`, EXIF viewer = `--pink` (`#e879a8`).
+Each tool has its own accent colour: JSON explorer = `--accent` blue, XSD explorer = `--teal`, EXIF viewer = `--pink` (`#e879a8`), C# converter = `--purple` (also reassigned as `--accent` in that file; a separate `--blue` variable holds the literal blue used for type-name syntax highlighting).
 
-The schema explorers use a fixed-height layout (header → flex body → tree + sidebar). The EXIF viewer uses a scrollable content area (sticky header → `.content` with `overflow-y: auto`).
+The schema explorers use a fixed-height layout (header → flex body → tree + sidebar). The EXIF viewer uses a scrollable content area (sticky header → `.content` with `overflow-y: auto`). The C# converter uses the same fixed-height header/sidebar layout as the schema explorers, with a scrollable code pane in place of a tree.
 
 Badge classes follow the pattern `bdg b-{type}`. The schema explorers use `b-str`, `b-ctype`, `b-seq` etc; the EXIF viewer uses `b-ok`, `b-warn`, `b-neutral`.
 
@@ -99,6 +100,28 @@ The schema explorers add a resizable left module panel (XSD) or toolbar (JSON). 
 - `extractTiffPhotoshop(buffer)` — scans raw buffer for first `8BIM` marker (TIFF/PSD fallback).
 - `parse8BIM(buffer)` — iterates 8BIM resource blocks. Path resources are IDs `0x07D0`–`0x0BB6` (2000–2998); resource `0x0BB7` (2999) is the active clipping path name (UTF-16BE unicode string).
 
+### json_schema_csharp_converter.html
+
+Converts a dropped JSON Schema (draft 2019-09/2020-12 style, `$defs`/`$ref`) into C# POCO classes, matching the conventions of hand-tuned quicktype.io output (Newtonsoft `JsonProperty`/`NullValueHandling.Ignore`, `decimal`/`long` for number/integer, PascalCase from camelCase).
+
+**No tree/sidebar-for-inspection here** — the sidebar is a live options form (root class name, namespace, JSON library, numeric types, and toggles); the main pane is a syntax-highlighted `<pre>` of the generated code plus Copy/Download buttons. There is no persistence between sessions; drop a schema, tune options, regenerate is instant and local (nothing leaves the browser).
+
+**Generation model** (module-level `let ctx`, rebuilt on every regenerate via `makeCtx()`): each generated class/enum/union is a mutable "record" object pushed to `ctx.allRecords` in discovery order (this becomes render order) and, when it originates from a `$ref`, indexed in `ctx.registryByPointer` by the JSON Pointer string — this is both the dedup key (a second `$ref` to the same pointer reuses the record) and the cycle guard (the record is registered *before* its members are populated, so a self-referential schema resolves to the same record instead of recursing forever).
+
+**Key data flow**:
+1. `generate(ctx, schemaRoot, options)` — resolves the root schema (handling a top-level `$ref` or `type: array`), creates the root class record, then calls `populateClassMembers()` which recurses through the whole schema via `resolveSchemaType()`.
+2. `resolveSchemaType(ctx, schema, nameHint)` — the core dispatcher. Resolves `$ref` (via `resolveRefType`), merges `allOf` branches that aren't `if`/`then` conditionals (`mergeAllOfIfNeeded`), unwraps `type: [X, "null"]` and nullable `oneOf`/`anyOf` patterns, and dispatches on the effective JSON type to build a typed `{k, ...}` reference (`prim`, `class`, `enum`, `union`, `list`, `dict`).
+3. `resolveRefType(ctx, ref, nameHint)` — resolves a `#/$defs/...` pointer. A bare constrained primitive (e.g. a def that's just `{type: "string", maxLength: 14}`) is inlined as a primitive with its constraints carried up (no class generated); an object schema becomes a class record named from the pointer's last segment (falling back to the full dotted path, then a numeric suffix, on name collision).
+4. Real `oneOf`/`anyOf` unions (not the nullable-wrapper pattern) become a `partial struct` with one nullable field per alternative plus a hand-rolled `JsonConverter` that branches on `JsonToken` — the same shape quicktype itself emits for anonymous unions (Newtonsoft only; System.Text.Json mode always falls back to `object` with a warning).
+5. `runStructuralMerge(ctx)` (when "merge structurally identical classes" is on) — iterates to a fixed point, grouping live records by a structural signature (member names/types/required-ness, resolved through any existing merge chain) and setting `.mergedInto` on later duplicates; `follow(rec)` walks that chain at render time, so merging never requires rewriting other records' type references.
+6. `renderAll(ctx, meta, sourceLabel)` — renders every non-merged record via `renderClass`/`renderEnum`/`renderUnion`, then optionally a `FromJson`/`ToJson` helper (`renderHelper`, mirroring quicktype's own `Converter.Settings` pattern) and stub `JsonConverter` classes for any length/range attributes referenced (`renderConverterStubs`), so "emit converters" output compiles standalone.
+
+**Naming**: `toPascalCase()` splits camelCase/acronym runs the same way quicktype does (`nonGTINLogisticsUnitInformationModule` → `NonGtinLogisticsUnitInformationModule`) via two regex passes (lower/digit→upper boundary, then acronym-run→word boundary) rather than a lookup table. Enum member identifiers are sanitized separately (`sanitizeEnumIdentifier`) and checked against a C# reserved-word set — a colliding member (e.g. a JSON enum value literally `"string"`) is escaped with a leading `@` rather than renamed, so it still round-trips through `StringEnumConverter`/`JsonStringEnumConverter` without an `[EnumMember]`.
+
+**Length/range converter naming** (the "emit converters" option): informed by analysis of a real hand-patched quicktype output file — a string def's `maxLength` becomes `String{N}MinMaxLengthCheckConverter`, except a def literally named `codeList` which becomes `CodeList{N}...` (the one domain-specific renaming the source file made by hand); numeric `minimum`/`maximum` constraints all share a single `MinMaxValueCheckConverter`. This is a heuristic, not a guarantee of matching any specific existing hand-written converter names.
+
+**Known simplification**: unions inside a union alternative that are themselves arrays (e.g. a recursive "any JSON value" schema with an array-of-self branch) are not modeled as a struct — `tryBuildUnion` returns `null` for any array alternative and the property falls back to `object`, surfaced as a warning rather than silently dropped.
+
 ## Known issues / areas to improve
 
 **JSON explorer**
@@ -116,3 +139,9 @@ The schema explorers add a resizable left module panel (XSD) or toolbar (JSON). 
 - `extractTiffPhotoshop` is a naive byte scan — may mis-detect `8BIM` sequences in image data for non-PSD TIFFs
 - MakerNotes detection relies on key-name heuristics; structured MakerNote groups from exifr aren't broken out separately
 - TIFF preview via UTIF: CMYK TIFFs are displayed as RGB (no true CMYK render); only the first IFD (page 0) is previewed for multi-page TIFFs; very large TIFFs may be slow to decode
+
+**C# converter**
+- Class/property names never collide with C# keywords (PascalCase always capitalizes), but enum *member* names can — handled via a leading `@`; a generated type name that shadows a common BCL type (e.g. an enum literally named `Type`) is not renamed, which compiles fine but can read oddly next to `System.Type`
+- `oneOf`/`anyOf` unions with an array alternative, or more than one object alternative, always fall back to `object` (see "Known simplification" above) rather than attempting a `List<T>` field on the union struct
+- "Merge structurally identical classes" compares resolved member signatures, so two `$defs` that differ only in `maxLength`/`minimum`/`maximum` collapse into one class whenever "emit converters" is off (constraint info is then lost, same tradeoff quicktype itself makes) but stay distinct when "emit converters" is on (since their converter attributes differ)
+- No `patternProperties`, `if`/`then`/`else` branching (beyond being skipped inside `allOf`), or JSON Schema `not` support — these are simply ignored rather than modeled
