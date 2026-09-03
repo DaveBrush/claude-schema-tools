@@ -1,0 +1,121 @@
+# Class name overrides for json_schema_csharp_converter.html, matching the
+# generated output's class/enum names to Devfusion.DataModel.Hybrid.Model's
+# existing hand-written HybridProductMessage.1.0.40.1.cs (a quicktype.io
+# output for hybriddatamodelschema1.0.40.1.json). Paste as-is into the
+# "Class name overrides" box; also set Root class name to
+# HybridProductMessage and Namespace to Devfusion.DataModel.Hybrid.Model.
+#
+# Derived by matching each generated class to a hand-written one via its
+# exact set of JSON property names (and, where ambiguous, property name +
+# referenced type together). A handful of genuinely one-to-many cases
+# aren't covered here since there's no single correct answer without a
+# judgment call — see the conversation this was produced in.
+AdditionalPartyIdentification -> BrandOwnerAdditionalPartyIdentification
+AdditionalTradeItemDimensions -> AdditionalTradeItemDimensionElement
+AdditionalTradeItemIdentification -> AdditionalTradeItemIdentificationElement
+AdditionalTradeItemPrice -> RetailerPriceElement
+AdditiveInformation -> AdditiveInformationElement
+AfterHoursCommunicationChannel -> CommunicationChannel
+Allergen -> AllergenElement
+Amount -> DutyFeeTaxAmount
+AnimalFeeding -> AnimalFeedingElement
+BasicTasteInformation -> BasicTasteInformationElement
+BatteryDetail -> BatteryDetailElement
+BitternessOfBeer -> BitternessOfBeerElement
+BrandMarketingDescription -> RetailerFormattedDescription
+CaloriesPerGram -> CaloriesPerGramElement
+CarbonFootprintHeader -> CarbonFootprintHeaderElement
+Certification2 -> DietCertificationCertification
+CertificationInformation -> CertificationInformationElement
+ChemicalInformation -> ChemicalInformationElement
+ChemicalRegulationInformation -> ChemicalRegulationInformationElement
+ChildNutritionLabel -> ChildNutritionLabelElement
+ClaimDetail -> ClaimDetailElement
+Colour -> ColourElement
+ComponentInformation -> ComponentInformationElement
+ConsumerFirstAvailabilityDateTime -> RetailerDateTimeOffset
+ConsumerUsageLabel -> ConsumerUsageLabelElement
+ConsumerWarningInformation -> ConsumerWarningInformationElement
+DangerousSubstanceInformation -> DangerousSubstanceInformationElement
+DataCarrier -> DataCarrierElement
+Depth -> RetailerMeasurement
+Description2500 -> Description
+DietTypeInformation -> DietTypeInformationElement
+DistributionDetails -> DistributionDetailElement
+Dosage -> DosageElement
+DutyFeeTaxInformation -> DutyFeeTaxInformationElement
+FishReportingInformation -> FishReportingInformationElement
+FlashPoint -> FlashPointElement
+FoodAndBeverageIngredient -> FoodAndBeverageIngredientElement
+FormattedDescription2500 -> FormattedDescription
+FreeTextNutrition -> FreeTextNutritionElement
+FrontOfPackNutrition -> FrontOfPackNutritionElement
+GlobalModelContactInformation -> GlobalModelContactInformationElement
+GradeCode -> GradeCodeElement
+GrowingMethodInformation -> GrowingMethodInformationElement
+Gs1TradeItemIdentificationKey -> Gs1TradeItemIdentificationKeyElement
+HazardStatement -> HazardStatementElement
+HazardousWasteInformation -> HazardousWasteInformationElement
+IllegalToAdvertiseTargetMarket -> TargetMarketElement
+ImportClassification -> ImportClassificationElement
+IndividualPackagingComponentLevel -> IndividualPackagingComponentLevelElement
+IngredientsModule -> DataIngredientsModule
+IngredientsModule2 -> ComponentDataIngredientsModule
+ItemDescriptionInformation -> ItemDescriptionInformationElement
+LabelAccreditation -> LabelAccreditationElement
+LightBulbInformation -> LightBulbInformationElement
+MaterialComposition -> MaterialCompositionElement
+Measurement -> HybridMeasurementType
+NonFoodIngredient -> NonFoodIngredientElement
+NonPackagedSizeDimension -> NonPackagedSizeDimensionElement
+NutrientHeader -> NutrientHeaderElement
+NutritionalInformationModule -> DataNutritionalInformationModule
+NutritionalInformationModule2 -> ComponentDataNutritionalInformationModule
+NutritionalProgram -> NutritionalProgramElement
+OrderQuantityMaximum -> RetailerLong
+OrganicClaim -> OrganicClaimElement
+OrganismClassification -> OrganismClassificationElement
+Packaging -> PackagingElement
+PackagingDate -> PackagingDateElement
+PackagingWeightOptimisation -> PackagingConstituentPackagingWeightOptimisation
+PackagingWeightOptimisation2 -> IndividualPackagingComponentLevelPackagingWeightOptimisation
+PegMeasurements -> PegMeasurementElement
+PersonOrDepartmentName -> RetailerString
+PhysicalResourceUsageInformation -> PhysicalResourceUsageInformationElement
+PieceCountInformation -> PieceCountInformationElement
+PrecautionaryStatement -> PrecautionaryStatementElement
+PreparationServing -> PreparationServingElement
+ProductActivityDetails -> ProductActivityDetailElement
+ProductCharacteristics -> ProductCharacteristicElement
+PromotionMarketing -> PromotionMarketingElement
+PromotionalItemInformation -> PromotionalItemInformationElement
+ProtectiveEquipment -> ProtectiveEquipmentElement
+ReferencedFileHeader -> ReferencedFileHeaderElement
+ReferencedTradeItem -> ReferencedTradeItemElement
+RegulatoryInformation -> RegulatoryInformationElement
+SafetyDataSheetInformationReferencedFileInformation -> ReferencedFileInformationElement
+SaleItemInformation -> SaleItemInformationElement
+Season -> SeasonElement
+SpecificGravityInformation -> SpecificGravityInformationElement
+StandardsAndCompliance -> StandardsAndComplianceElement
+SuggestedRetailPrice -> SuggestedRetailPriceElement
+Tag -> TaggableAllergyTextTag
+Tag2 -> TaggableIngredientTag
+TargetConsumerUsage -> TargetConsumerUsageElement
+TradeItemContactInformation -> TradeItemContactInformationElement
+TradeItemInformation -> RetailerTradeItemInformationElement
+TradeItemKeyword -> RetailerDescription
+TradeItemStacking -> TradeItemStackingElement
+TradeItemTemperatureInformation -> TradeItemTemperatureInformationElement
+TradeItemVariant -> TradeItemVariantElement
+TradeItemWasteManagement -> TradeItemWasteManagementElement
+TransportationClassification -> TransportationClassificationElement
+Type -> TypeEnum
+TypeNameValue -> AttributeElement
+Value -> DistributionDetailValue
+Value2 -> PromotionMarketingValue
+Value3 -> PriceElement
+Value4 -> SuggestedRetailPriceValue
+Value5 -> AdditionalTradeItemIdentificationValue
+Value6 -> TradeItemInformationValue
+WarrantyConditions -> WarrantyConditionElement
